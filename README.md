@@ -17,7 +17,7 @@
 ## Stack
 
 - Backend: `FastAPI`, `uvicorn`
-- Vision: `OpenCV`, `numpy`
+- Vision: `MediaPipe Face Landmarker`, `OpenCV`, `numpy`
 - Frontend: static `HTML + CSS + JavaScript`
 - AI: `DeepSeek` API
 

@@ -611,18 +611,25 @@ h2 {
 
 .decision-stack {
   display: grid;
-  grid-template-rows: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  grid-template-rows: 480px minmax(0, 1fr);
+  align-content: stretch;
   gap: 16px;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
 .decision-card {
-  overflow: auto;
+  display: grid;
+  grid-template-rows: 18px 92px 48px 112px minmax(106px, 1fr);
+  row-gap: 10px;
+  overflow: hidden;
   padding: 24px;
 }
 
 .metrics-card {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
 }
@@ -634,28 +641,41 @@ h2 {
 }
 
 .decision-card h2 {
-  margin-top: 12px;
+  align-self: center;
+  min-height: 0;
+  margin: 0;
   font-size: 34px;
   line-height: 1.12;
   letter-spacing: 0;
+  overflow-wrap: break-word;
+  overflow: hidden;
 }
 
 .decision-card p {
-  margin-top: 12px;
+  min-height: 48px;
+  max-height: 48px;
+  margin: 0;
   color: #637075;
   font-size: 15px;
-  line-height: 1.65;
+  line-height: 1.6;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .score-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-top: 22px;
+  margin-top: 0;
 }
 
 .score-row div {
+  display: grid;
+  align-content: center;
   min-width: 0;
+  min-height: 112px;
   padding: 16px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.54);
@@ -665,9 +685,14 @@ h2 {
 .score-row strong {
   display: block;
   color: var(--accent-strong);
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#awayDuration {
+  font-size: 25px;
 }
 
 .score-row span {
@@ -678,13 +703,27 @@ h2 {
   font-weight: 800;
 }
 
+.decision-actions {
+  display: grid;
+  gap: 18px;
+  align-self: end;
+}
+
 .action-row {
   gap: 10px;
-  margin-top: 22px;
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+
+.action-row > button {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .primary-action,
 .soft-action,
+.calibration-action,
 .source-form button,
 .template-list button,
 .reminder-grid button {
@@ -723,12 +762,63 @@ h2 {
   box-shadow: none;
 }
 
+.calibration-action {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+.calibration-row {
+  --calibration-progress: 0%;
+  display: grid;
+  grid-template-columns: minmax(112px, 0.72fr) minmax(92px, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.calibration-progress {
+  display: block;
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(224, 229, 233, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(70, 80, 86, 0.06);
+}
+
+.calibration-progress-fill {
+  display: block;
+  width: var(--calibration-progress);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #64ad85, #285242);
+  transition: width 120ms linear;
+}
+
+.calibration-action.is-running {
+  cursor: wait;
+}
+
+.calibration-action:disabled {
+  opacity: 0.92;
+}
+
+.calibration-action.is-complete {
+  color: #425056;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.metrics-card .surface-head.compact {
+  padding: 18px 22px 8px;
+}
+
 .metric-list {
   display: grid;
-  gap: 12px;
-  max-height: calc(100% - 78px);
-  overflow: auto;
-  padding: 0 24px 22px;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  padding: 0 22px 18px;
 }
 
 .metric-row {
@@ -736,6 +826,7 @@ h2 {
   grid-template-columns: 78px minmax(0, 1fr) 38px;
   align-items: center;
   gap: 12px;
+  min-height: 26px;
   color: #59666b;
   font-size: 13px;
 }
@@ -1120,7 +1211,8 @@ select {
 }
 
 .source-item strong,
-.source-item span {
+.source-item span,
+.source-item small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1131,6 +1223,20 @@ select {
   margin-top: 5px;
   color: #7f8a90;
   font-size: 12px;
+}
+
+.source-item small {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.source-calibration.is-calibrated {
+  color: var(--accent-strong);
+}
+
+.source-calibration.is-uncalibrated {
+  color: #a06a39;
 }
 
 .source-actions {

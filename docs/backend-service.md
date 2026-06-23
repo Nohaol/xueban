@@ -7,7 +7,7 @@ The repository now includes a local Python backend under `backend/`:
 - `backend/main.py`
   FastAPI app with `/ws`, `/video_feed`, `/snapshot.jpg`, `/control`, `/state`, and `/health`.
 - `backend/engine.py`
-  Local runtime loop for source selection, camera capture, MediaPipe analysis, score calculation, overlay rendering, and mock fallback.
+  Local runtime loop for source selection, camera capture, MediaPipe Face Landmarker analysis, score calculation, overlay rendering, and mock fallback.
 - `backend/schemas.py`
   Shared request and response models.
 
@@ -16,7 +16,7 @@ The repository now includes a local Python backend under `backend/`:
 The backend can run in two modes:
 
 - `camera`
-  Uses OpenCV-based live analysis when a readable camera or network stream is available.
+  Uses MediaPipe Face Landmarker-based live analysis when a readable camera or network stream is available. OpenCV still handles camera/network capture and remains as a fallback analyzer.
 - `mock`
   Automatically activates if dependencies are missing, the source cannot be opened, or `FOCUS_FORCE_MOCK=1` is set.
 
@@ -109,7 +109,20 @@ The current scoring logic is heuristic, not a trained model:
 - `presence`
   Estimated from the recent ratio of frames with a detected face.
 
-This is enough for a demoable edge-node prototype. It is intentionally simpler than a landmark-based model, but it is much easier to keep running across Windows machines and mixed camera sources.
+The displayed state is not switched from a single frame. The analyzer keeps a
+roughly 30-second sliding window, tracks low-score ratios and median score, and
+maintains an `attentionDebt` value. Short posture changes only add limited
+evidence; the state changes to `distracted` only after the evidence persists
+and passes the state-machine hysteresis thresholds.
+
+Posture is evaluated relative to the current source calibration. A
+`calibrate_posture` control command samples stable MediaPipe frames for the
+active camera, saves the median head pose, face position, face scale, and eye
+openness under `focus_lab/config/sources/`, and immediately reloads the analyzer
+so later scores measure deviation from that camera-specific baseline instead of
+assuming a front-facing camera.
+
+This keeps the state stable enough for a demoable edge-node prototype while still using landmark-based evidence from MediaPipe.
 
 ## Important local camera note
 

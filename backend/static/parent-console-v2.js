@@ -47,10 +47,10 @@ const STATUS_META = {
 };
 
 const METRIC_META = [
-  ["gaze", "视线聚焦", "#64ad85"],
-  ["posture", "坐姿健康", "#d7904b"],
-  ["stability", "身体稳定", "#557fa3"],
-  ["presence", "在座覆盖", "#c55d5d"],
+  ["presence", "在座覆盖", "#3f7460"],
+  ["posture", "位姿匹配", "#d7904b"],
+  ["gaze", "面向一致", "#557fa3"],
+  ["stability", "动作稳定", "#c55d5d"],
 ];
 
 const STATUS_LABELS = {
@@ -97,6 +97,11 @@ const state = {
   videoSnapshotInFlight: false,
   videoStableFrames: 0,
   videoSnapshotDelay: 900,
+  calibrationTimer: null,
+  calibrationEndsAt: 0,
+  calibrationSourceId: "",
+  calibrationStartedAt: 0,
+  calibrationPhase: "",
 };
 
 const VIDEO_REFRESH_SLOW_MS = 900;
@@ -122,6 +127,12 @@ function pad(value) {
 function clock(timestamp) {
   const date = new Date(timestamp || Date.now());
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function dateTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function compactDuration(totalSeconds) {
@@ -150,6 +161,10 @@ function statusGroup(status) {
   if (status === "flow" || status === "normal") return "focused";
   if (status === "away" || status === "timeout_away") return "away";
   return "distracted";
+}
+
+function isCalibrating() {
+  return state.calibrationPhase === "collecting" || state.calibrationPhase === "writing";
 }
 
 function normalizePayload(payload) {
@@ -204,6 +219,10 @@ function pushEvent(payload) {
 
 function render(payload) {
   const safe = normalizePayload(payload || {});
+  if (isCalibrating() && (!state.calibrationSourceId || safe.sourceId === state.calibrationSourceId)) {
+    renderCalibrationState(safe);
+    return;
+  }
   const meta = STATUS_META[safe.status] || STATUS_META.normal;
   state.payload = safe;
   state.heatmap.shift();
@@ -231,13 +250,13 @@ function render(payload) {
   $("connectionLabel").textContent = state.socketConnected ? "本地视觉节点已接入" : "本地画面稳定，状态通道重连中";
   $("timeoutMask").classList.toggle("show", safe.status === "timeout_away");
   $("awayCountdown").textContent = duration(safe.awaySeconds);
-  $("awayDuration").textContent = duration(safe.awaySeconds);
-  $("awayStatus").textContent =
-    safe.awaySeconds > 0
-      ? safe.status === "timeout_away"
-        ? "已超时离座"
-        : "正在离座"
-      : "当前在座";
+  if (safe.awaySeconds > 0) {
+    $("awayDuration").textContent = duration(safe.awaySeconds);
+    $("awayStatus").textContent = safe.status === "timeout_away" ? "已超时离座" : "正在离座";
+  } else {
+    $("awayDuration").textContent = "当前在座";
+    $("awayStatus").textContent = "在座状态";
+  }
 
   renderMetrics(safe.metrics);
   renderCompactEvents();
@@ -246,6 +265,32 @@ function render(payload) {
   renderHeatmap();
   renderAdvisor(meta);
   renderAnalytics();
+  updateSessionTimer();
+}
+
+function renderCalibrationState(safe) {
+  state.payload = safe;
+  const remainingSeconds = Math.max(Math.ceil((state.calibrationEndsAt - Date.now()) / 1000), 0);
+  const isWriting = state.calibrationPhase === "writing";
+  $("studentLabel").textContent = safe.studentLabel;
+  $("focusScore").textContent = "--";
+  $("frameScore").textContent = isWriting ? "写入校准" : "姿态校准中";
+  $("frameStatus").textContent = isWriting ? "写入校准" : "姿态校准中";
+  setStatusClass($("frameStatus"), "normal");
+  $("decisionTitle").textContent = isWriting ? "正在确认校准结果" : "正在校准姿态基准";
+  $("decisionSummary").textContent = isWriting
+    ? "正在等待本机节点写入当前设备的姿态基准。"
+    : "请保持当前正确学习姿态，校准期间暂不更新专注判断。";
+  $("primaryDecisionButton").textContent = isWriting ? "写入中" : "校准中";
+  $("sourceLabel").textContent = safe.sourceLabel || safe.sourceId || "当前视频源";
+  $("lastUpdateSummary").textContent = isWriting ? "确认中" : `剩余 ${remainingSeconds}s`;
+  $("engineMode").textContent = isWriting ? "写入校准" : "校准中";
+  $("connectionLabel").textContent = "正在记录当前设备的姿态基准";
+  $("timeoutMask").classList.remove("show");
+  $("awayCountdown").textContent = duration(0);
+  $("awayDuration").textContent = "校准中";
+  $("awayStatus").textContent = "暂停判断";
+  renderMetrics({ presence: 0, posture: 0, gaze: 0, stability: 0 });
   updateSessionTimer();
 }
 
@@ -673,6 +718,11 @@ function renderSourceList(items = []) {
       const selected = source.is_selected ? " selected" : "";
       const status = STATUS_LABELS[source.status] || source.status || "待命";
       const transport = TRANSPORT_LABELS[source.transport] || source.transport;
+      const calibration = source.calibration || {};
+      const calibrationText = calibration.calibrated
+        ? `已校准 · ${dateTime(calibration.calibratedAt)}`
+        : "未校准";
+      const calibrationClass = calibration.calibrated ? "is-calibrated" : "is-uncalibrated";
       const deleteButton = source.is_builtin
         ? ""
         : `<button class="danger-button" type="button" data-delete-source-id="${source.source_id}">删除</button>`;
@@ -681,6 +731,7 @@ function renderSourceList(items = []) {
           <div>
             <strong>${source.label}</strong>
             <span>${status} · ${transport} · ${source.location}</span>
+            <small class="source-calibration ${calibrationClass}">${calibrationText}</small>
           </div>
           <div class="source-actions">
             <button type="button" data-source-id="${source.source_id}">
@@ -704,6 +755,28 @@ function renderSourceList(items = []) {
 async function refreshSources() {
   const data = await fetchJson("/sources");
   renderSourceList(data.items || []);
+  return data;
+}
+
+function findSource(items, sourceId) {
+  return (items || []).find((source) => source.source_id === sourceId);
+}
+
+function hasFreshCalibration(source, startedAt) {
+  const calibration = source?.calibration || {};
+  return Boolean(calibration.calibrated && Number(calibration.calibratedAt || 0) >= startedAt - 1000);
+}
+
+async function waitForCalibrationSource(sourceId, startedAt) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const data = await refreshSources();
+    const source = findSource(data.items || [], sourceId);
+    if (hasFreshCalibration(source, startedAt)) {
+      return source;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+  }
+  return null;
 }
 
 async function refreshAiAdvice() {
@@ -801,11 +874,92 @@ async function sendControl(command, text = "", options = {}) {
     body: JSON.stringify(payload),
   });
   if (!options.silent) {
+    if (data.message) {
+      $("controlResult").textContent = data.message;
+      return data;
+    }
     $("controlResult").textContent = text
       ? `家长留言已发送：${data.text}`
       : `指令已发送：${data.command}`;
   }
   return data;
+}
+
+function setCalibrationButton(progress, label, mode = "") {
+  const button = $("calibrationButton");
+  const row = $("calibrationRow");
+  if (!button) return;
+  if (row) row.style.setProperty("--calibration-progress", `${Math.max(0, Math.min(progress, 100))}%`);
+  button.classList.toggle("is-running", mode === "running");
+  button.classList.toggle("is-pending", mode === "pending");
+  button.classList.toggle("is-complete", mode === "complete");
+  button.disabled = mode === "running" || mode === "pending";
+  button.textContent = label;
+}
+
+async function startPostureCalibration() {
+  if (state.calibrationPhase) return;
+  if (state.calibrationTimer) {
+    clearInterval(state.calibrationTimer);
+    state.calibrationTimer = null;
+  }
+  setCalibrationButton(0, "准备校准", "running");
+  try {
+    const data = await sendControl("calibrate_posture", "", { silent: true });
+    const durationMs = Math.max(Number(data.duration || 12) * 1000, 3000);
+    const startedAt = Date.now();
+    state.calibrationStartedAt = startedAt;
+    state.calibrationEndsAt = startedAt + durationMs;
+    state.calibrationSourceId = data.sourceId || state.payload?.sourceId || "";
+    state.calibrationPhase = "collecting";
+    $("controlResult").textContent = "正在校准：请保持当前正确学习姿态。";
+    state.calibrationTimer = setInterval(() => {
+      const progress = Math.min(((Date.now() - startedAt) / durationMs) * 100, 100);
+      setCalibrationButton(progress, `校准中 ${Math.round(progress)}%`, "running");
+      if (progress >= 100) {
+        clearInterval(state.calibrationTimer);
+        state.calibrationTimer = null;
+        state.calibrationPhase = "writing";
+        state.calibrationEndsAt = Date.now() + 9000;
+        setCalibrationButton(100, "写入校准", "pending");
+        $("controlResult").textContent = "正在确认校准结果，请稍等。";
+        waitForCalibrationSource(state.calibrationSourceId, state.calibrationStartedAt)
+          .then((source) => {
+            if (source) {
+              state.calibrationPhase = "";
+              state.calibrationEndsAt = 0;
+              setCalibrationButton(100, "校准完成", "complete");
+              $("controlResult").textContent = `姿态校准完成：${dateTime(source.calibration.calibratedAt)}。`;
+              return;
+            }
+            state.calibrationPhase = "";
+            state.calibrationEndsAt = 0;
+            setCalibrationButton(0, "姿态校准", "");
+            $("controlResult").textContent = "校准失败：没有检测到完整、稳定的人脸。请把眼睛和脸部移到画面中间后再试。";
+          })
+          .catch(() => {
+            state.calibrationPhase = "";
+            state.calibrationEndsAt = 0;
+            setCalibrationButton(0, "姿态校准", "");
+            $("controlResult").textContent = "校准结果刷新失败，请手动刷新设备列表确认。";
+          })
+          .finally(() => {
+            state.calibrationSourceId = "";
+            window.setTimeout(() => setCalibrationButton(0, "姿态校准", ""), 2600);
+          });
+      }
+    }, 120);
+  } catch (error) {
+    if (state.calibrationTimer) {
+      clearInterval(state.calibrationTimer);
+      state.calibrationTimer = null;
+    }
+    state.calibrationEndsAt = 0;
+    state.calibrationSourceId = "";
+    state.calibrationPhase = "";
+    setCalibrationButton(0, "姿态校准", "");
+    $("controlResult").textContent = "姿态校准启动失败，请确认视频源正常。";
+  }
 }
 
 function bindEvents() {
@@ -835,6 +989,7 @@ function bindEvents() {
     sendControl(text ? "parent_message" : "voice_talk", text);
   });
   $("manualAiButton").addEventListener("click", refreshAiAdvice);
+  $("calibrationButton").addEventListener("click", startPostureCalibration);
   $("sendAiScriptButton").addEventListener("click", sendAiScript);
   $("primaryDecisionButton").addEventListener("click", () => {
     const status = state.payload?.status || "normal";

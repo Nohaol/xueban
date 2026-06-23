@@ -6,7 +6,10 @@ __pycache__/
 backend/*.log
 .claude/
 .codegraph/
-focus_lab/
+focus_lab/__pycache__/
+focus_lab/outputs/
+focus_lab/data/
+focus_lab/config/
 ppt制作/
 小智MCP文档/
 DESKTOP_PARENT_CONSOLE_PLAN.md

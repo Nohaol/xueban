@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import threading
 import time
 from collections import deque
 from dataclasses import asdict, dataclass
+from pathlib import Path
+from statistics import median
 from typing import Deque, Iterator
 
 try:
@@ -17,6 +20,28 @@ try:
     import numpy as np  # type: ignore
 except ImportError:  # pragma: no cover
     np = None
+
+try:
+    import mediapipe  # type: ignore
+    from mediapipe.tasks import python as mp_python  # type: ignore
+    from mediapipe.tasks.python import vision as mp_vision  # type: ignore
+except ImportError:  # pragma: no cover
+    mediapipe = None
+    mp_python = None
+    mp_vision = None
+
+try:
+    from focus_lab.focus_features import (  # type: ignore
+        FocusAnalyzer,
+        compute_features,
+        landmark_to_ndarray,
+        no_face_features,
+    )
+except ImportError:  # pragma: no cover
+    FocusAnalyzer = None
+    compute_features = None
+    landmark_to_ndarray = None
+    no_face_features = None
 
 from .schemas import FocusMetrics, FocusPayload
 
@@ -30,9 +55,16 @@ PLACEHOLDER_JPEG = base64.b64decode(
 class EngineConfig:
     student_label: str = os.getenv("FOCUS_STUDENT_LABEL", "学生 A")
     camera_source: str = os.getenv("FOCUS_CAMERA_SOURCE", "0")
+    analyzer: str = os.getenv("FOCUS_ANALYZER", "mediapipe")
+    mediapipe_model_path: str = os.getenv(
+        "FOCUS_MEDIAPIPE_MODEL",
+        str(Path(__file__).resolve().parent.parent / "focus_lab" / "models" / "face_landmarker.task"),
+    )
     frame_width: int = int(os.getenv("FOCUS_FRAME_WIDTH", "960"))
     frame_height: int = int(os.getenv("FOCUS_FRAME_HEIGHT", "540"))
     analysis_fps: float = float(os.getenv("FOCUS_ANALYSIS_FPS", "10"))
+    focus_window_seconds: float = float(os.getenv("FOCUS_WINDOW_SECONDS", "30"))
+    calibration_seconds: float = float(os.getenv("FOCUS_CALIBRATION_SECONDS", "12"))
     away_timeout_seconds: int = int(os.getenv("FOCUS_AWAY_TIMEOUT_SECONDS", "900"))
     face_grace_seconds: float = float(os.getenv("FOCUS_FACE_GRACE_SECONDS", "3"))
     jpeg_quality: int = int(os.getenv("FOCUS_JPEG_QUALITY", "82"))
@@ -79,6 +111,11 @@ class FocusEngine:
         self._source_retry_after = 0.0
         self._source_switch_started_at = 0.0
         self._prev_gray = None
+        self._mp_landmarker = None
+        self._mp_last_timestamp_ms = 0
+        self._mp_error = ""
+        self._calibration_session: dict | None = None
+        self._focus_analyzer = self._create_focus_analyzer()
 
         self._face_cascade = None
         self._eye_cascade = None
@@ -126,6 +163,8 @@ class FocusEngine:
             self.reset_session()
         elif command == "refresh_stream":
             self._reset_capture()
+        elif command == "calibrate_posture":
+            return self.start_calibration()
         return {
             "accepted": True,
             "command": command,
@@ -135,11 +174,28 @@ class FocusEngine:
             "sourceId": self._current_source_id,
         }
 
+    def start_calibration(self) -> dict:
+        now = time.time()
+        self._calibration_session = {
+            "sourceId": self._current_source_id,
+            "startedAt": now,
+            "duration": max(self.config.calibration_seconds, 3.0),
+            "samples": [],
+            "status": "collecting",
+        }
+        return {
+            "accepted": True,
+            "command": "calibrate_posture",
+            "sourceId": self._current_source_id,
+            "duration": self._calibration_session["duration"],
+            "message": "Calibration started. Keep the normal study posture.",
+        }
+
     def list_sources(self) -> list[dict]:
-        return [asdict(source) for source in self._sources.values()]
+        return [self._source_payload(source) for source in self._sources.values()]
 
     def get_current_source(self) -> dict:
-        return asdict(self._sources[self._current_source_id])
+        return self._source_payload(self._sources[self._current_source_id])
 
     def probe_source(self, source_id: str) -> dict:
         if source_id not in self._sources:
@@ -151,7 +207,7 @@ class FocusEngine:
         source.note = note
         return {
             "ok": ok,
-            "source": asdict(source),
+            "source": self._source_payload(source),
             "note": note,
         }
 
@@ -160,7 +216,7 @@ class FocusEngine:
             if source.source_type == "network_camera" and source.location == url and source.transport == transport:
                 source.label = label
                 source.note = "用户添加的网络摄像头。"
-                return asdict(source)
+                return self._source_payload(source)
 
         source_id = self._make_network_source_id(label)
         source = VideoSource(
@@ -175,18 +231,20 @@ class FocusEngine:
             note="用户添加的网络摄像头。",
         )
         self._sources[source_id] = source
-        return asdict(source)
+        return self._source_payload(source)
 
     def select_source(self, source_id: str) -> dict:
         if source_id not in self._sources:
             raise KeyError(source_id)
         self._current_source_id = source_id
+        self._calibration_session = None
         self._presence_history.clear()
         self._motion_history.clear()
         self._recent_face_boxes.clear()
         self._last_face_seen_at = 0.0
         self._last_face_box = None
         self._away_started_at = None
+        self._focus_analyzer = self._create_focus_analyzer()
         self._prev_gray = None
         self._last_source_error = ""
         self._source_retry_after = 0.0
@@ -195,7 +253,7 @@ class FocusEngine:
         self._reset_capture()
         with self._lock:
             self._latest_jpeg = PLACEHOLDER_JPEG
-        return asdict(self._sources[source_id])
+        return self._source_payload(self._sources[source_id])
 
     def reset_session(self) -> dict:
         if "local-default" in self._sources:
@@ -203,12 +261,14 @@ class FocusEngine:
         else:
             self._current_source_id = next(iter(self._sources))
 
+        self._calibration_session = None
         self._presence_history.clear()
         self._motion_history.clear()
         self._recent_face_boxes.clear()
         self._last_face_seen_at = 0.0
         self._last_face_box = None
         self._away_started_at = None
+        self._focus_analyzer = self._create_focus_analyzer()
         self._prev_gray = None
         self._last_source_error = ""
         self._source_retry_after = 0.0
@@ -226,7 +286,7 @@ class FocusEngine:
         with self._lock:
             self._latest_jpeg = PLACEHOLDER_JPEG
             self._latest_payload = self._build_boot_payload()
-        return asdict(current)
+        return self._source_payload(current)
 
     def delete_source(self, source_id: str) -> dict:
         if source_id not in self._sources:
@@ -245,7 +305,97 @@ class FocusEngine:
             self._mark_selected_source(fallback_id)
             self._reset_capture()
 
-        return asdict(self._sources[self._current_source_id])
+        return self._source_payload(self._sources[self._current_source_id])
+
+    def _preferred_analyzer(self) -> str:
+        return self.config.analyzer.strip().lower()
+
+    def _wants_mediapipe(self) -> bool:
+        return self._preferred_analyzer() != "haar"
+
+    def _can_use_haar(self) -> bool:
+        return self._face_cascade is not None and not self._face_cascade.empty()
+
+    def _can_use_mediapipe(self) -> bool:
+        if not self._wants_mediapipe():
+            return False
+        if mediapipe is None or mp_python is None or mp_vision is None:
+            self._mp_error = "MediaPipe is not installed."
+            return False
+        if FocusAnalyzer is None or compute_features is None or landmark_to_ndarray is None or no_face_features is None:
+            self._mp_error = "focus_lab feature analyzer is unavailable."
+            return False
+        if not Path(self.config.mediapipe_model_path).is_file():
+            self._mp_error = f"MediaPipe model not found: {self.config.mediapipe_model_path}"
+            return False
+        return True
+
+    def _create_focus_analyzer(self):
+        if FocusAnalyzer is None:
+            return None
+        calibration_path = self._calibration_path(self._current_source_id)
+        return FocusAnalyzer(
+            window_seconds=self.config.focus_window_seconds,
+            fps_estimate=max(int(self.config.analysis_fps), 1),
+            calibration_path=str(calibration_path) if calibration_path.is_file() else None,
+        )
+
+    def _safe_source_key(self, source_id: str) -> str:
+        return "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in source_id)
+
+    def _calibration_dir(self) -> Path:
+        return Path(__file__).resolve().parent.parent / "focus_lab" / "config" / "sources"
+
+    def _calibration_path(self, source_id: str) -> Path:
+        return self._calibration_dir() / f"{self._safe_source_key(source_id)}.json"
+
+    def _source_payload(self, source: VideoSource) -> dict:
+        payload = asdict(source)
+        calibration_path = self._calibration_path(source.source_id)
+        calibrated_at = None
+        sample_count = 0
+        if calibration_path.is_file():
+            try:
+                calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+                calibrated_at = int(calibration.get("createdAt") or 0) or None
+                sample_count = int(calibration.get("sampleCount") or 0)
+            except (OSError, ValueError, TypeError):
+                calibrated_at = None
+                sample_count = 0
+        payload["calibration"] = {
+            "calibrated": calibrated_at is not None,
+            "calibratedAt": calibrated_at,
+            "sampleCount": sample_count,
+        }
+        return payload
+
+    def _ensure_mediapipe_landmarker(self) -> bool:
+        if self._mp_landmarker is not None:
+            return True
+        if not self._can_use_mediapipe():
+            return False
+        try:
+            base_options = mp_python.BaseOptions(model_asset_path=self.config.mediapipe_model_path)
+            options = mp_vision.FaceLandmarkerOptions(
+                base_options=base_options,
+                running_mode=mp_vision.RunningMode.VIDEO,
+                num_faces=1,
+                min_face_detection_confidence=0.5,
+                min_face_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+                output_face_blendshapes=False,
+                output_facial_transformation_matrixes=True,
+            )
+            self._mp_landmarker = mp_vision.FaceLandmarker.create_from_options(options)
+            self._mp_error = ""
+            return True
+        except Exception as error:  # pragma: no cover - depends on local MediaPipe runtime.
+            self._mp_landmarker = None
+            self._mp_error = f"MediaPipe initialization failed: {error}"
+            return False
+
+    def _close_mediapipe_landmarker(self) -> None:
+        return
 
     def _seed_builtin_sources(self) -> None:
         configured_index = int(self.config.camera_source) if self.config.camera_source.isdigit() else 0
@@ -310,8 +460,7 @@ class FocusEngine:
             not self.config.mock_mode
             and cv2 is not None
             and np is not None
-            and self._face_cascade is not None
-            and not self._face_cascade.empty()
+            and (self._can_use_mediapipe() or self._can_use_haar())
         )
         if not can_analyze:
             self._mode = "mock"
@@ -394,6 +543,15 @@ class FocusEngine:
         return payload, self._render_mock_frame(payload, source)
 
     def _analyze_frame(self, frame: object, source: VideoSource) -> tuple[FocusPayload, object]:
+        if self._ensure_mediapipe_landmarker():
+            return self._analyze_frame_mediapipe(frame, source)
+
+        if not self._can_use_haar():
+            self._mode = "mock"
+            source.status = "mock"
+            source.note = self._mp_error or "No available visual analyzer."
+            return self._build_mock_state(source)
+
         assert cv2 is not None
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self._face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
@@ -467,6 +625,223 @@ class FocusEngine:
         annotated = self._annotate_frame(frame.copy(), payload, face_box)
         self._prev_gray = gray
         return payload, annotated
+
+    def _analyze_frame_mediapipe(self, frame: object, source: VideoSource) -> tuple[FocusPayload, object]:
+        assert cv2 is not None
+        assert np is not None
+        assert mediapipe is not None
+        assert self._mp_landmarker is not None
+        assert compute_features is not None
+        assert landmark_to_ndarray is not None
+        assert no_face_features is not None
+
+        now = time.time()
+        timestamp_ms = max(int(now * 1000), self._mp_last_timestamp_ms + 1)
+        self._mp_last_timestamp_ms = timestamp_ms
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mediapipe.Image(image_format=mediapipe.ImageFormat.SRGB, data=rgb)
+        result = self._mp_landmarker.detect_for_video(mp_image, timestamp_ms)
+
+        height, width = frame.shape[:2]
+        has_face = len(result.face_landmarks) > 0
+        landmarks = result.face_landmarks[0] if has_face else None
+        transform = result.facial_transformation_matrixes[0] if (
+            has_face
+            and result.facial_transformation_matrixes
+            and len(result.facial_transformation_matrixes) > 0
+        ) else None
+
+        if self._focus_analyzer is None:
+            self._focus_analyzer = self._create_focus_analyzer()
+
+        if has_face and landmarks is not None:
+            lm_3d = landmark_to_ndarray(landmarks)
+            features = compute_features(
+                lm_3d,
+                (height, width),
+                transform_matrix=transform,
+                cal=self._focus_analyzer.cal if self._focus_analyzer else None,
+                nose_history=self._focus_analyzer.nose_history if self._focus_analyzer else None,
+            )
+            if self._focus_analyzer is not None:
+                nose_xy = np.array([float(landmarks[1].x), float(landmarks[1].y)])
+                self._focus_analyzer.nose_history.append(nose_xy)
+                if len(self._focus_analyzer.nose_history) > self._focus_analyzer.window_frames:
+                    self._focus_analyzer.nose_history.pop(0)
+        else:
+            features = no_face_features()
+
+        calibration_message = self._record_calibration_sample(has_face, features, source, now)
+        state = self._focus_analyzer.update(has_face, features) if self._focus_analyzer is not None else {
+            "status": "away",
+            "score": 0,
+            "recentFaceRatio": 0,
+            "subScores": {},
+            "reasonCodes": ["face_not_visible"],
+        }
+
+        self._presence_history.append((now, has_face))
+        while self._presence_history and now - self._presence_history[0][0] > 300:
+            self._presence_history.popleft()
+
+        away_seconds = self._compute_away_seconds(has_face, now)
+        status = self._map_mediapipe_status(state, away_seconds)
+        focus_score = self._clamp(float(state.get("score", 0)))
+        if status == "away":
+            focus_score = min(focus_score, 35)
+        if status == "timeout_away":
+            focus_score = min(focus_score, 15)
+
+        metrics = self._metrics_from_mediapipe_state(state, features)
+        event_text = calibration_message or self._compose_mediapipe_event(status, state, features)
+        payload = FocusPayload(
+            timestamp=timestamp_ms,
+            studentLabel=self.config.student_label,
+            status=status,
+            focusScore=focus_score,
+            awaySeconds=away_seconds,
+            eventText=event_text,
+            metrics=metrics,
+            sourceId=source.source_id,
+            sourceLabel=source.label,
+            engineMode="mediapipe",
+        )
+        annotated = self._annotate_mediapipe_frame(frame.copy(), payload, landmarks)
+        return payload, annotated
+
+    def _record_calibration_sample(self, has_face: bool, features: dict, source: VideoSource, now: float) -> str:
+        session = self._calibration_session
+        if not session or session.get("sourceId") != source.source_id:
+            return ""
+
+        elapsed = now - float(session["startedAt"])
+        if has_face and self._is_calibration_sample_reliable(features):
+            session["samples"].append({
+                "yaw": features.get("headYaw"),
+                "pitch": features.get("headPitch"),
+                "roll": features.get("headRoll"),
+                "faceCenterX": features.get("faceCenterX"),
+                "faceCenterY": features.get("faceCenterY"),
+                "faceBoxArea": features.get("faceBoxArea"),
+                "eyeOpenRatio": features.get("eyeOpenRatio"),
+                "motionStability": features.get("motionStability"),
+            })
+
+        if elapsed < float(session["duration"]):
+            remaining = max(int(round(float(session["duration"]) - elapsed)), 0)
+            return f"Calibration collecting: keep normal study posture for {remaining}s."
+
+        return self._finish_calibration(source)
+
+    def _is_calibration_sample_reliable(self, features: dict) -> bool:
+        required = ["headYaw", "headPitch", "headRoll", "faceCenterX", "faceCenterY", "faceBoxArea", "eyeOpenRatio"]
+        if not features.get("faceVisible", False):
+            return False
+        if any(features.get(key) is None for key in required):
+            return False
+        if not features.get("frameReliable", False):
+            return False
+        return float(features.get("motionStability", 0.0)) >= 0.35
+
+    def _finish_calibration(self, source: VideoSource) -> str:
+        session = self._calibration_session
+        self._calibration_session = None
+        samples = list(session.get("samples", [])) if session else []
+        if len(samples) < max(10, int(self.config.analysis_fps * 2)):
+            return "Calibration failed: not enough stable face samples. Please keep the study posture and try again."
+
+        def sample_median(key: str) -> float:
+            return round(float(median(float(sample[key]) for sample in samples if sample.get(key) is not None)), 4)
+
+        payload = {
+            "sourceId": source.source_id,
+            "sourceLabel": source.label,
+            "profileName": self._safe_source_key(source.source_id),
+            "createdAt": int(time.time() * 1000),
+            "sampleCount": len(samples),
+            "baseline": {
+                "yawMedian": sample_median("yaw"),
+                "pitchMedian": sample_median("pitch"),
+                "rollMedian": sample_median("roll"),
+                "faceCenterX": sample_median("faceCenterX"),
+                "faceCenterY": sample_median("faceCenterY"),
+                "faceBoxArea": sample_median("faceBoxArea"),
+                "eyeOpenMedian": sample_median("eyeOpenRatio"),
+            },
+            "screen": {},
+            "thresholds": {
+                "yawSoftDelta": 12,
+                "yawHardDelta": 25,
+                "pitchSoftDelta": 15,
+                "pitchHardDelta": 30,
+                "rollHardDelta": 22,
+                "centerHardDelta": 0.24,
+                "areaMinRatio": 0.55,
+                "areaMaxRatio": 1.8,
+                "eyeClosedRatio": 0.55,
+            },
+        }
+        payload["screen"] = dict(payload["baseline"])
+        calibration_path = self._calibration_path(source.source_id)
+        calibration_path.parent.mkdir(parents=True, exist_ok=True)
+        calibration_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._focus_analyzer = self._create_focus_analyzer()
+        self._presence_history.clear()
+        self._away_started_at = None
+        return f"Calibration saved for {source.label}: {len(samples)} stable samples."
+
+    def _map_mediapipe_status(self, state: dict, away_seconds: int) -> str:
+        if away_seconds >= self.config.away_timeout_seconds:
+            return "timeout_away"
+        mp_status = str(state.get("status", "uncertain"))
+        score = float(state.get("score", 0))
+        if mp_status == "away":
+            return "away"
+        if mp_status == "focused":
+            return "flow" if score >= 86 else "normal"
+        if mp_status == "distracted" or mp_status == "fatigue":
+            return "distracted"
+        return "normal" if score >= 68 else "distracted"
+
+    def _metrics_from_mediapipe_state(self, state: dict, features: dict) -> FocusMetrics:
+        subs = state.get("subScores", {}) or {}
+        head = float(subs.get("headOrientation", 0.0))
+        eye = float(subs.get("eyeState", 0.5 if features.get("eyeReliable", False) is False else 0.0))
+        gaze = self._clamp((head * 0.7 + eye * 0.3) * 100)
+        posture = self._clamp(float(subs.get("taskPosture", 0.0)) * 100)
+        stability = self._clamp(float(subs.get("motionStability", features.get("motionStability", 0.0))) * 100)
+        presence = self._clamp(float(state.get("recentFaceRatio", subs.get("presence", 0.0))) * 100)
+        return FocusMetrics(gaze=gaze, posture=posture, stability=stability, presence=presence)
+
+    def _compose_mediapipe_event(self, status: str, state: dict, features: dict) -> str:
+        if status == "timeout_away":
+            return "Away-from-seat timeout exceeded."
+        if status == "away":
+            return "Temporary away-from-seat state detected."
+        if features.get("eyesClosed", False) or state.get("status") == "fatigue":
+            return "Attention drift is rising. A light reminder may help."
+        if status == "flow":
+            return "Strong sustained attention detected."
+        if status == "distracted":
+            return "Attention drift is rising. A light reminder may help."
+        return "Study rhythm is steady."
+
+    def _annotate_mediapipe_frame(self, frame: object, payload: FocusPayload, landmarks) -> object:
+        assert cv2 is not None
+        if landmarks is not None:
+            height, width = frame.shape[:2]
+            for index, landmark in enumerate(landmarks):
+                if index % 2 != 0:
+                    continue
+                px = int(landmark.x * width)
+                py = int(landmark.y * height)
+                if 0 <= px < width and 0 <= py < height:
+                    cv2.circle(frame, (px, py), 1, (100, 200, 120), -1)
+
+        if payload.status == "timeout_away":
+            frame = self._annotate_frame(frame, payload, None)
+        return frame
 
     def _read_source_frame(self, source: VideoSource) -> object | None:
         assert cv2 is not None

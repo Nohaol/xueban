@@ -118,9 +118,17 @@
                     <span id="awayStatus">当前在座</span>
                   </div>
                 </div>
-                <div class="action-row">
-                  <button class="primary-action" id="primaryDecisionButton" type="button">继续观察</button>
-                  <button class="soft-action" id="manualAiButton" type="button">智能分析</button>
+                <div class="decision-actions">
+                  <div class="action-row">
+                    <button class="primary-action" id="primaryDecisionButton" type="button">继续观察</button>
+                    <button class="soft-action" id="manualAiButton" type="button">智能分析</button>
+                  </div>
+                  <div class="calibration-row" id="calibrationRow">
+                    <button class="soft-action calibration-action" id="calibrationButton" type="button">姿态校准</button>
+                    <span class="calibration-progress" aria-hidden="true">
+                      <span class="calibration-progress-fill"></span>
+                    </span>
+                  </div>
                 </div>
               </article>
 
