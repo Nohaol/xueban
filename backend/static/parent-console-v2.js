@@ -86,6 +86,8 @@ const state = {
   events: [],
   heatmap: new Array(24).fill("normal"),
   samples: [],
+  reviewSamples: [],
+  reviewRange: "5m",
   socket: null,
   socketConnected: false,
   socketReconnectTimer: null,
@@ -102,12 +104,38 @@ const state = {
   calibrationSourceId: "",
   calibrationStartedAt: 0,
   calibrationPhase: "",
+  displayStatus: "normal",
+  displayStatusSince: Date.now(),
+  pendingDisplayStatus: "",
+  pendingDisplayStartedAt: 0,
+  lastEventAtByStatus: {},
 };
 
 const VIDEO_REFRESH_SLOW_MS = 900;
 const VIDEO_REFRESH_WARM_MS = 360;
 const VIDEO_REFRESH_FAST_MS = 140;
 const VIDEO_STABLE_FRAME_COUNT = 3;
+const STATUS_DISPLAY_DELAY_MS = {
+  flow: 5000,
+  normal: 3000,
+  distracted: 15000,
+  away: 8000,
+  timeout_away: 0,
+};
+const STATUS_EVENT_COOLDOWN_MS = {
+  flow: 60000,
+  normal: 60000,
+  distracted: 90000,
+  away: 45000,
+  timeout_away: 30000,
+};
+const REVIEW_RANGES = {
+  "5m": { label: "近 5 分钟", ms: 5 * 60 * 1000 },
+  "15m": { label: "近 15 分钟", ms: 15 * 60 * 1000 },
+  "30m": { label: "近 30 分钟", ms: 30 * 60 * 1000 },
+  session: { label: "本次学习", ms: Infinity },
+};
+const REVIEW_HISTORY_LIMIT_MS = 4 * 60 * 60 * 1000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -205,10 +233,60 @@ function setStatusClass(element, status) {
   }
 }
 
+function displayDelay(status) {
+  return STATUS_DISPLAY_DELAY_MS[status] ?? 5000;
+}
+
+function resolveDisplayStatus(rawStatus) {
+  const now = Date.now();
+  const nextStatus = rawStatus || "normal";
+  if (nextStatus === state.displayStatus) {
+    state.pendingDisplayStatus = "";
+    state.pendingDisplayStartedAt = 0;
+    return state.displayStatus;
+  }
+
+  const delay = displayDelay(nextStatus);
+  if (delay <= 0) {
+    state.displayStatus = nextStatus;
+    state.displayStatusSince = now;
+    state.pendingDisplayStatus = "";
+    state.pendingDisplayStartedAt = 0;
+    return state.displayStatus;
+  }
+
+  if (state.pendingDisplayStatus !== nextStatus) {
+    state.pendingDisplayStatus = nextStatus;
+    state.pendingDisplayStartedAt = now;
+    return state.displayStatus;
+  }
+
+  if (now - state.pendingDisplayStartedAt >= delay) {
+    state.displayStatus = nextStatus;
+    state.displayStatusSince = now;
+    state.pendingDisplayStatus = "";
+    state.pendingDisplayStartedAt = 0;
+  }
+
+  return state.displayStatus;
+}
+
+function displayEventText(displayStatus, rawPayload) {
+  if (displayStatus !== rawPayload.status && rawPayload.status === "distracted") {
+    return "检测到短暂状态波动，继续观察。";
+  }
+  return rawPayload.eventText || "视觉状态已更新。";
+}
+
 function pushEvent(payload) {
   const latest = state.events[0];
   const text = payload.eventText || "视觉状态已更新。";
+  const now = Date.now();
+  const cooldown = STATUS_EVENT_COOLDOWN_MS[payload.status] ?? 60000;
+  const lastAt = state.lastEventAtByStatus[payload.status] || 0;
   if (latest && latest.text === text && latest.status === payload.status) return;
+  if (now - lastAt < cooldown) return;
+  state.lastEventAtByStatus[payload.status] = now;
   state.events.unshift({
     time: clock(payload.timestamp),
     text,
@@ -223,7 +301,12 @@ function render(payload) {
     renderCalibrationState(safe);
     return;
   }
-  const meta = STATUS_META[safe.status] || STATUS_META.normal;
+  const displayStatus = resolveDisplayStatus(safe.status);
+  const displayPayload = Object.assign({}, safe, {
+    status: displayStatus,
+    eventText: displayEventText(displayStatus, safe),
+  });
+  const meta = STATUS_META[displayStatus] || STATUS_META.normal;
   state.payload = safe;
   state.heatmap.shift();
   state.heatmap.push(safe.status);
@@ -234,13 +317,20 @@ function render(payload) {
     timestamp: safe.timestamp,
   });
   state.samples = state.samples.slice(-72);
-  pushEvent(safe);
+  state.reviewSamples.push({
+    status: safe.status,
+    score: safe.focusScore,
+    metrics: Object.assign({}, safe.metrics),
+    timestamp: Date.now(),
+  });
+  state.reviewSamples = state.reviewSamples.filter((item) => Date.now() - item.timestamp <= REVIEW_HISTORY_LIMIT_MS);
+  pushEvent(displayPayload);
 
   $("studentLabel").textContent = safe.studentLabel;
   $("focusScore").textContent = safe.focusScore;
   $("frameScore").textContent = `专注度 ${safe.focusScore}`;
   $("frameStatus").textContent = meta.label;
-  setStatusClass($("frameStatus"), safe.status);
+  setStatusClass($("frameStatus"), displayStatus);
   $("decisionTitle").textContent = meta.decisionTitle;
   $("decisionSummary").textContent = meta.decisionSummary;
   $("primaryDecisionButton").textContent = meta.primaryAction;
@@ -248,11 +338,11 @@ function render(payload) {
   $("lastUpdateSummary").textContent = clock(safe.timestamp);
   $("engineMode").textContent = engineModeLabel(safe.engineMode);
   $("connectionLabel").textContent = state.socketConnected ? "本地视觉节点已接入" : "本地画面稳定，状态通道重连中";
-  $("timeoutMask").classList.toggle("show", safe.status === "timeout_away");
+  $("timeoutMask").classList.toggle("show", displayStatus === "timeout_away");
   $("awayCountdown").textContent = duration(safe.awaySeconds);
   if (safe.awaySeconds > 0) {
     $("awayDuration").textContent = duration(safe.awaySeconds);
-    $("awayStatus").textContent = safe.status === "timeout_away" ? "已超时离座" : "正在离座";
+    $("awayStatus").textContent = displayStatus === "timeout_away" ? "已超时离座" : "正在观察";
   } else {
     $("awayDuration").textContent = "当前在座";
     $("awayStatus").textContent = "在座状态";
@@ -260,8 +350,7 @@ function render(payload) {
 
   renderMetrics(safe.metrics);
   renderCompactEvents();
-  renderTimeline();
-  renderTimelineStats(safe);
+  renderTimelineStats();
   renderHeatmap();
   renderAdvisor(meta);
   renderAnalytics();
@@ -355,30 +444,63 @@ function countTransitions(items, matcher) {
   return count;
 }
 
-function renderTimelineStats(payload) {
-  const samples = state.samples.length ? state.samples : state.heatmap.map((status) => ({ status }));
+function reviewRangeMeta() {
+  return REVIEW_RANGES[state.reviewRange] || REVIEW_RANGES["5m"];
+}
+
+function reviewSamplesForRange() {
+  const meta = reviewRangeMeta();
+  if (!Number.isFinite(meta.ms)) return state.reviewSamples.slice();
+  const cutoff = Date.now() - meta.ms;
+  return state.reviewSamples.filter((item) => item.timestamp >= cutoff);
+}
+
+function sampleEvery(items, maxCount = 80) {
+  if (items.length <= maxCount) return items;
+  const step = Math.ceil(items.length / maxCount);
+  return items.filter((_, index) => index % step === 0 || index === items.length - 1);
+}
+
+function average(items, getter) {
+  if (!items.length) return 0;
+  return Math.round(items.reduce((sum, item) => sum + clamp(getter(item)), 0) / items.length);
+}
+
+function reviewStats(samples) {
   const focusedCount = samples.filter((item) => statusGroup(item.status) === "focused").length;
-  const focusRatio = Math.round((focusedCount / Math.max(samples.length, 1)) * 100);
+  const distractedSamples = samples.filter((item) => statusGroup(item.status) === "distracted").length;
+  const awaySamples = samples.filter((item) => statusGroup(item.status) === "away").length;
+  const total = Math.max(samples.length, 1);
+  const focusRatio = Math.round((focusedCount / total) * 100);
+  const distractedRatio = Math.round((distractedSamples / total) * 100);
+  const awayRatio = Math.round((awaySamples / total) * 100);
   const distractedCount = countTransitions(samples, (status) => statusGroup(status) === "distracted");
   const awayCount = countTransitions(samples, (status) => statusGroup(status) === "away");
-  const latestStatus = payload.status;
-  let currentRun = 0;
-  for (let index = samples.length - 1; index >= 0; index -= 1) {
-    if (samples[index].status !== latestStatus) break;
-    currentRun += 1;
-  }
+  const avgScore = average(samples, (item) => item.score);
+  const avgPosture = average(samples, (item) => item.metrics?.posture);
+  return { focusRatio, distractedRatio, awayRatio, distractedCount, awayCount, avgScore, avgPosture };
+}
 
+function renderTimelineStats() {
+  const samples = reviewSamplesForRange();
+  const stats = reviewStats(samples);
+  const meta = reviewRangeMeta();
+  const statusHint = stats.focusRatio >= 75 ? "整体节奏稳定" : stats.focusRatio >= 55 ? "存在一些波动" : "需要重点关注";
+
+  const attentionCount = stats.distractedCount + stats.awayCount;
+  const attentionHint = stats.awayCount
+    ? `含 ${stats.awayCount} 次离座`
+    : "连续波动只记一次";
   const cards = [
-    ["近段专注占比", `${focusRatio}%`, "根据最近状态采样"],
-    ["分心波动", `${distractedCount} 次`, "连续波动只记一次"],
-    ["离座记录", `${awayCount} 次`, "含短暂离座和超时"],
-    ["当前状态持续", `${currentRun} 帧`, (STATUS_META[latestStatus] || STATUS_META.normal).label],
+    ["专注占比", `${stats.focusRatio}%`, statusHint, ""],
+    ["平均专注分", `${stats.avgScore || "--"}`, meta.label, ""],
+    ["需要关注", `${attentionCount} 次`, attentionHint, stats.awayCount ? "is-danger" : stats.distractedCount ? "is-warning" : ""],
   ];
 
   $("timelineStats").innerHTML = cards
     .map(
-      ([label, value, hint]) => `
-        <div class="timeline-stat">
+      ([label, value, hint, tone]) => `
+        <div class="review-summary-card ${tone}">
           <span>${label}</span>
           <strong>${value}</strong>
           <small>${hint}</small>
@@ -389,9 +511,54 @@ function renderTimelineStats(payload) {
 }
 
 function renderHeatmap() {
-  $("heatmap").innerHTML = state.heatmap
-    .map((status) => `<span class="heatmap-cell tone-${status}"></span>`)
+  const samples = reviewSamplesForRange();
+  const buckets = heatmapBuckets(samples);
+  $("heatmap").innerHTML = buckets
+    .map((bucket) => {
+      const status = bucket.status || "normal";
+      const alpha = bucket.count ? Math.max(0.24, Math.min(0.86, bucket.intensity)) : 0.12;
+      return `<span class="heatmap-cell tone-${status}" style="--heat-alpha:${alpha.toFixed(2)}" title="${bucket.title}"></span>`;
+    })
     .join("");
+}
+
+function heatmapBuckets(samples) {
+  const range = state.reviewRange;
+  const bucketCount = range === "5m" ? 70 : range === "15m" ? 84 : range === "30m" ? 98 : 112;
+  return bucketSamples(samples, bucketCount);
+}
+
+function bucketSamples(samples, count) {
+  if (!samples.length) {
+    return Array.from({ length: count }, () => ({ status: "normal", count: 0, intensity: 0.12, title: "暂无采样" }));
+  }
+  const first = samples[0].timestamp;
+  const last = samples[samples.length - 1].timestamp;
+  const span = Math.max(last - first, 1);
+  return Array.from({ length: count }, (_, bucketIndex) => {
+    const start = first + (span / count) * bucketIndex;
+    const end = first + (span / count) * (bucketIndex + 1);
+    const bucketItems = samples.filter((item) => item.timestamp >= start && (bucketIndex === count - 1 ? item.timestamp <= end : item.timestamp < end));
+    const groups = { focused: 0, distracted: 0, away: 0 };
+    let scoreSum = 0;
+    bucketItems.forEach((item) => {
+      groups[statusGroup(item.status)] += 1;
+      scoreSum += clamp(item.score);
+    });
+    const status = groups.away ? "away" : groups.distracted > groups.focused ? "distracted" : "normal";
+    const avgScore = bucketItems.length ? scoreSum / bucketItems.length : 0;
+    const instability = bucketItems.length ? 1 - avgScore / 100 : 0;
+    const density = Math.min(1, bucketItems.length / Math.max(samples.length / count, 1));
+    const intensity = Math.max(density * 0.62, instability * 0.84);
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    return {
+      status,
+      count: bucketItems.length,
+      intensity,
+      title: `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}-${pad(endDate.getHours())}:${pad(endDate.getMinutes())} · ${bucketItems.length} 个采样`,
+    };
+  });
 }
 
 function pointsFor(items, getter, width = 300, height = 82) {
@@ -405,9 +572,80 @@ function pointsFor(items, getter, width = 300, height = 82) {
     .join(" ");
 }
 
+function renderReviewDistribution(samples) {
+  const stats = reviewStats(samples);
+  if (!samples.length) {
+    $("reviewDonut").style.background = "linear-gradient(90deg, rgba(100, 173, 133, 0.28) 0% 100%)";
+    $("reviewFocusRatio").textContent = "--%";
+    $("reviewBalanceLabel").textContent = "等待采样";
+    $("reviewBreakdown").innerHTML = ["专注", "波动", "离座"].map((label) => `
+      <div class="review-breakdown-row">
+        <span>${label}</span>
+        <div class="review-breakdown-track"><i class="review-breakdown-fill" style="width:0%;background:#b9c9bf"></i></div>
+        <strong>--</strong>
+      </div>
+    `).join("");
+    return;
+  }
+  const focusedStop = stats.focusRatio;
+  const distractedStop = focusedStop + stats.distractedRatio;
+  $("reviewDonut").style.background = `linear-gradient(90deg, #64ad85 0% ${focusedStop}%, #d7904b ${focusedStop}% ${distractedStop}%, #c55d5d ${distractedStop}% 100%)`;
+  $("reviewFocusRatio").textContent = `${stats.focusRatio}%`;
+  $("reviewBalanceLabel").textContent = samples.length ? `${samples.length} 个采样点` : "等待采样";
+  const rows = [
+    ["专注", stats.focusRatio, "#64ad85"],
+    ["波动", stats.distractedRatio, "#d7904b"],
+    ["离座", stats.awayRatio, "#c55d5d"],
+  ];
+  $("reviewBreakdown").innerHTML = rows.map(([label, value, color]) => `
+    <div class="review-breakdown-row">
+      <span>${label}</span>
+      <div class="review-breakdown-track">
+        <i class="review-breakdown-fill" style="width:${value}%;background:${color}"></i>
+      </div>
+      <strong>${value}%</strong>
+    </div>
+  `).join("");
+}
+
+function renderReviewInsight(samples) {
+  const stats = reviewStats(samples);
+  let tone = "观察";
+  let title = "保持当前节奏";
+  let copy = "这段时间整体比较平稳，家长可以少打断，多关注任务是否按计划推进。";
+  if (!samples.length) {
+    title = "等待复盘数据";
+    copy = "开始学习后，这里会沉淀更长时间的状态趋势。";
+  } else if (stats.awayCount > 0) {
+    tone = "关注离座";
+    title = "留意离座发生的时段";
+    copy = "如果离座集中出现在同一类任务后，可以考虑调整休息节奏或任务切分。";
+  } else if (stats.distractedCount >= 2 || stats.focusRatio < 60) {
+    tone = "轻度关注";
+    title = "波动比平时更明显";
+    copy = "建议先看任务难度和疲劳程度，再决定是否用一句短提醒介入。";
+  } else if (stats.avgPosture && stats.avgPosture < 65) {
+    tone = "坐姿观察";
+    title = "坐姿匹配度偏低";
+    copy = "可以在下一段学习前做一次姿态校准，避免摄像头角度造成误判。";
+  }
+  $("reviewInsightTone").textContent = tone;
+  $("reviewHeadline").textContent = title;
+  $("reviewSummary").textContent = copy;
+  $("reviewInsight").innerHTML = `
+    <div class="review-insight-card">
+      <strong>${title}</strong>
+      <p>${copy}</p>
+      <small>${reviewRangeMeta().label} · ${samples.length} 个采样点</small>
+    </div>
+  `;
+}
+
 function renderAnalytics() {
-  const samples = state.samples.length ? state.samples : [{ score: 82, status: "normal", metrics: {} }];
-  const recent = samples.slice(-36);
+  const rangeSamples = reviewSamplesForRange();
+  const samples = rangeSamples.length ? rangeSamples : [{ score: 82, status: "normal", metrics: {}, timestamp: Date.now() }];
+  const recent = sampleEvery(samples, 84);
+  const rangeMeta = reviewRangeMeta();
   const trendItems = [
     { key: "score", label: "专注分", color: "#285242", getter: (item) => item.score },
     { key: "gaze", label: "视线", color: "#64ad85", getter: (item) => item.metrics?.gaze },
@@ -418,6 +656,9 @@ function renderAnalytics() {
   $("trendLegend").innerHTML = trendItems
     .map((item) => `<span><i style="background:${item.color}"></i>${item.label}</span>`)
     .join("");
+  $("trendRangeLabel").textContent = `${rangeMeta.label}趋势`;
+  $("heatmapRangeLabel").textContent = rangeMeta.label;
+  $("reviewSampleLabel").textContent = rangeSamples.length ? `${rangeSamples.length} 个采样点` : "等待数据";
 
   const gridLines = [0, 25, 50, 75, 100]
     .map((value) => `<line x1="0" y1="${82 - value * 0.82}" x2="300" y2="${82 - value * 0.82}" />`)
@@ -442,6 +683,8 @@ function renderAnalytics() {
       <g transform="translate(0 7)">${lines}</g>
     </svg>
   `;
+  renderReviewDistribution(rangeSamples);
+  renderReviewInsight(rangeSamples);
 }
 
 function renderAdvisor(meta) {
@@ -979,6 +1222,17 @@ function bindEvents() {
     button.addEventListener("click", () => {
       $("parentMessage").value = button.dataset.template;
       switchView("advice");
+    });
+  });
+  document.querySelectorAll("[data-range]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.reviewRange = button.dataset.range || "5m";
+      document.querySelectorAll("[data-range]").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      renderTimelineStats();
+      renderHeatmap();
+      renderAnalytics();
     });
   });
 

@@ -187,33 +187,78 @@
         </section>
 
         <section class="view" id="view-review">
+          <div class="review-board">
+            <header class="review-command-bar">
+              <div class="review-logo">
+                <span class="brand-mark"><svg><use href="#icon-brand"></use></svg></span>
+                <strong>Study Review</strong>
+              </div>
+              <span class="review-chip">Live Session</span>
+            </header>
           <div class="review-grid">
+            <article class="surface review-header-panel">
+              <div>
+                <h2 id="reviewHeadline">本次学习节奏稳定</h2>
+                <p id="reviewSummary">过去一段时间的专注趋势、状态占比和需要关注的时段。</p>
+              </div>
+              <div class="review-window-control" id="reviewRangeControl" aria-label="复盘时间范围">
+                <button class="active" type="button" data-range="5m">5 分钟</button>
+                <button type="button" data-range="15m">15 分钟</button>
+                <button type="button" data-range="30m">30 分钟</button>
+                <button type="button" data-range="session">本次</button>
+              </div>
+            </article>
+
+            <div class="review-summary-grid" id="timelineStats"></div>
+
+            <article class="surface review-heatmap-panel">
+              <div class="surface-head compact">
+                <h2>状态热力墙</h2>
+                <span id="heatmapRangeLabel">近 5 分钟</span>
+              </div>
+              <div class="review-heatmap" id="heatmap"></div>
+              <div class="heatmap-scale">
+                <span>平稳</span>
+                <span>波动</span>
+                <span>离座</span>
+              </div>
+            </article>
+
             <article class="surface trend-panel">
-              <div class="surface-head">
+              <div class="surface-head compact">
                 <div>
-                  <h2>今日复盘</h2>
-                  <p>最近状态采样的趋势和占比。</p>
+                  <h2>状态趋势</h2>
+                  <p id="trendRangeLabel">近 5 分钟趋势</p>
                 </div>
-                <div class="segmented">
-                  <button class="active" type="button">今天</button>
-                  <button type="button">近 7 天</button>
-                  <button type="button">自定义</button>
-                </div>
+                <span class="review-chip" id="reviewSampleLabel">等待数据</span>
               </div>
               <div class="chart-legend" id="trendLegend"></div>
               <div class="trend-chart" id="trendChart"></div>
             </article>
-            <article class="surface stats-panel">
-              <div class="timeline-stats" id="timelineStats"></div>
-              <div class="heatmap" id="heatmap"></div>
-            </article>
-            <article class="surface timeline-panel">
+
+            <article class="surface review-insight-panel">
               <div class="surface-head compact">
-                <h2>事件记录</h2>
-                <span>最近 10 条</span>
+                <h2>回看建议</h2>
+                <span id="reviewInsightTone">观察</span>
               </div>
-              <div class="timeline" id="timeline"></div>
+              <div class="review-insight" id="reviewInsight"></div>
             </article>
+
+            <article class="surface review-side-panel">
+              <div class="surface-head compact">
+                <h2>状态占比</h2>
+                <span id="reviewBalanceLabel">采样中</span>
+              </div>
+              <div class="review-donut-wrap">
+                <div class="review-donut" id="reviewDonut"></div>
+                <div class="review-donut-center">
+                  <strong id="reviewFocusRatio">--%</strong>
+                  <span>专注占比</span>
+                </div>
+              </div>
+              <div class="review-breakdown" id="reviewBreakdown"></div>
+            </article>
+          </div>
           </div>
         </section>
 
