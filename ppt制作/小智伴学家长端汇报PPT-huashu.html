@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>小智伴学家长端专注监督系统 · Huashu汇报版</title>
+  <style>
+    :root {
+      --navy: #102326;
+      --navy-2: #173238;
+      --navy-3: #203e46;
+      --ink: #162236;
+      --muted: #647386;
+      --paper: #f7f9fc;
+      --white: #ffffff;
+      --orange: #2f6fdd;
+      --orange-2: #7fb2ff;
+      --blue: #41a6b5;
+      --green: #5aa469;
+      --red: #c95f5f;
+      --line-dark: rgba(255, 255, 255, 0.09);
+      --line-light: rgba(13, 37, 61, 0.09);
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.24);
+      --soft-shadow: 0 18px 42px rgba(16, 40, 70, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      background: #0c1b1e;
+      color: var(--ink);
+      overflow-y: auto;
+      scroll-snap-type: y mandatory;
+    }
+
+    img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    .hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 99;
+      pointer-events: none;
+    }
+
+    .progress {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .progress span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--orange), var(--orange-2));
+      transition: width 160ms ease;
+    }
+
+    .pager {
+      position: absolute;
+      top: 18px;
+      right: 32px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .slide {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+    }
+
+    .canvas {
+      position: relative;
+      width: min(1778px, calc(100vw - 48px));
+      aspect-ratio: 16 / 9;
+      max-height: calc(100vh - 48px);
+      overflow: hidden;
+      padding: 62px 58px 44px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 28px;
+      background:
+        linear-gradient(120deg, rgba(16, 35, 38, 0.98), rgba(18, 45, 50, 0.96) 52%, rgba(22, 34, 54, 0.96)),
+        var(--navy);
+      box-shadow: var(--shadow);
+    }
+
+    .canvas.light {
+      background:
+        linear-gradient(120deg, rgba(248, 250, 253, 0.99), rgba(241, 247, 250, 0.98) 56%, rgba(239, 247, 249, 0.96)),
+        #f4f7fb;
+      color: var(--ink);
+    }
+
+    .canvas::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(var(--line-dark) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line-dark) 1px, transparent 1px);
+      background-size: 64px 64px;
+      opacity: 0.8;
+    }
+
+    .canvas.light::before {
+      background-image:
+        linear-gradient(var(--line-light) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line-light) 1px, transparent 1px);
+      opacity: 0.75;
+    }
+
+    .canvas > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .topbar {
+      position: absolute;
+      top: 54px;
+      left: 58px;
+      right: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 2;
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .light .topbar {
+      border-bottom-color: rgba(16, 40, 70, 0.12);
+      color: #5f7085;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: #fff;
+      font-weight: 900;
+    }
+
+    .light .brand { color: #17375d; }
+
+    .brand-dot {
+      width: 30px;
+      height: 30px;
+      border: 8px solid var(--orange);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.95);
+    }
+
+    .body {
+      margin-top: 70px;
+      min-height: 0;
+      display: grid;
+      gap: 28px;
+    }
+
+    .foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .light .foot { color: #7b8998; }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 26px;
+      color: var(--orange);
+      font-size: 20px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .section-label::before {
+      content: "";
+      width: 48px;
+      height: 4px;
+      background: var(--orange);
+    }
+
+    .big-title {
+      max-width: 1200px;
+      color: #fff;
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      font-size: 62px;
+      line-height: 1.12;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .light .big-title { color: #14365e; }
+
+    .big-title .accent,
+    .accent { color: var(--orange); }
+
+    .subcopy {
+      max-width: 900px;
+      margin-top: 28px;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 25px;
+      line-height: 1.55;
+      font-weight: 700;
+    }
+
+    .light .subcopy { color: #51657a; }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 34px;
+    }
+
+    .chip {
+      min-width: 128px;
+      padding: 13px 22px;
+      border-radius: 999px;
+      background: #fff;
+      color: #17375d;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 900;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 34px;
+      min-height: 0;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 30px;
+      min-height: 0;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 24px;
+      min-height: 0;
+    }
+
+    .cols-left {
+      display: grid;
+      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+      gap: 34px;
+      min-height: 0;
+    }
+
+    .cols-right {
+      display: grid;
+      grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr);
+      gap: 34px;
+      min-height: 0;
+    }
+
+    .panel {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 30px;
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 20px 56px rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+    }
+
+    .light .panel {
+      border-color: rgba(16, 40, 70, 0.10);
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .card {
+      border-radius: 30px;
+      background: #fff;
+      box-shadow: var(--soft-shadow);
+      overflow: hidden;
+      padding: 24px;
+    }
+
+    .card.fit-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .card.fit-card .image-wrap {
+      flex: 0 0 auto;
+    }
+
+    .card.fit-card .card-title {
+      flex: 0 0 auto;
+      margin-top: 16px;
+    }
+
+    .card.fit-card .card-desc {
+      flex: 0 0 auto;
+    }
+
+    .grid-3 .card.fit-card .card-title {
+      font-size: 27px;
+    }
+
+    .dark-card {
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 24px;
+      color: #fff;
+    }
+
+    .image-wrap {
+      position: relative;
+      overflow: hidden;
+      border-radius: 22px;
+      background: #e9eef4;
+      min-height: 0;
+    }
+
+    .image-wrap.contain img {
+      object-fit: contain;
+      background: #fff;
+    }
+
+    .image-wrap.cover img { object-fit: cover; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      background: #fff;
+      color: #17375d;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .orange-pill {
+      background: rgba(47, 111, 221, 0.13);
+      color: var(--orange);
+    }
+
+    .card-title {
+      margin-top: 20px;
+      color: #15375f;
+      font-size: 30px;
+      line-height: 1.25;
+      font-weight: 900;
+    }
+
+    .card-desc {
+      margin-top: 8px;
+      color: #506376;
+      font-size: 20px;
+      line-height: 1.48;
+      font-weight: 700;
+    }
+
+    .compact-desc {
+      font-size: 18px;
+      line-height: 1.42;
+    }
+
+    .dense-title {
+      color: #fff;
+      font-size: 34px;
+      line-height: 1.25;
+      font-weight: 900;
+    }
+
+    .light .dense-title { color: #14365e; }
+
+    .dense-list {
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .dense-list li {
+      position: relative;
+      padding-left: 22px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 20px;
+      line-height: 1.48;
+      font-weight: 700;
+    }
+
+    .light .dense-list li { color: #53677b; }
+
+    .dense-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--orange);
+    }
+
+    .callout {
+      margin-top: 20px;
+      padding: 18px 20px;
+      border-radius: 16px;
+      background: rgba(47, 111, 221, 0.12);
+      color: #fff;
+      border-left: 5px solid var(--orange);
+      font-size: 19px;
+      line-height: 1.48;
+      font-weight: 800;
+    }
+
+    .light .callout { color: #17375d; }
+
+    .mini-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .mini {
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: #fff;
+      color: #14365e;
+      font-weight: 900;
+      font-size: 18px;
+      text-align: center;
+    }
+
+    .process {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .process-card {
+      position: relative;
+      min-height: 210px;
+      padding: 22px 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #14365e;
+      box-shadow: var(--soft-shadow);
+    }
+
+    .process-card::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -18px;
+      transform: translateY(-50%);
+      color: var(--orange);
+      font-size: 32px;
+      font-weight: 900;
+    }
+
+    .process-card:last-child::after { content: ""; }
+
+    .process-card small {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(47, 111, 221, 0.13);
+      color: var(--orange);
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    .process-card strong {
+      display: block;
+      margin-top: 18px;
+      font-size: 24px;
+      line-height: 1.28;
+    }
+
+    .process-card span {
+      display: block;
+      margin-top: 10px;
+      color: #52677b;
+      font-size: 17px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
+    .info-table {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.10);
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 18px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
+    .light .row {
+      background: #fff;
+      color: #52677b;
+      box-shadow: 0 8px 20px rgba(16, 40, 70, 0.06);
+    }
+
+    .row b {
+      color: var(--orange);
+      font-weight: 900;
+    }
+
+    .state-card {
+      min-height: 370px;
+      padding: 24px;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.93);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .state-card .dot {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      background: var(--green);
+      margin-bottom: 18px;
+    }
+
+    .state-card:nth-child(2) .dot { background: var(--orange); }
+    .state-card:nth-child(3) .dot { background: var(--blue); }
+    .state-card:nth-child(4) .dot { background: var(--red); }
+
+    .state-card h3 {
+      color: #14365e;
+      font-size: 26px;
+      line-height: 1.25;
+    }
+
+    .state-card p {
+      margin-top: 12px;
+      color: #52677b;
+      font-size: 18px;
+      line-height: 1.55;
+      font-weight: 700;
+    }
+
+    .evidence-box {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #f3f6fa;
+      color: #14365e;
+      font-size: 16px;
+      line-height: 1.46;
+      font-weight: 800;
+    }
+
+    .blank-box {
+      height: 100%;
+      min-height: 520px;
+      border: 2px dashed rgba(47, 111, 221, 0.62);
+      border-radius: 32px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+    }
+
+    .light .blank-box {
+      background: rgba(255, 255, 255, 0.72);
+      color: #14365e;
+    }
+
+    .blank-box strong {
+      display: block;
+      font-size: 34px;
+      line-height: 1.25;
+    }
+
+    .blank-box span {
+      display: block;
+      margin-top: 12px;
+      color: inherit;
+      opacity: 0.68;
+      font-size: 20px;
+      line-height: 1.55;
+      font-weight: 700;
+    }
+
+    .image-caption {
+      margin-top: 14px;
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .light .image-caption { color: #77889a; }
+
+    .cover-body {
+      margin-top: 98px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+      gap: 46px;
+      align-items: stretch;
+      min-height: 0;
+    }
+
+    .cover-title {
+      max-width: 1060px;
+      color: #fff;
+      font-size: 78px;
+      line-height: 1.08;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .cover-title .accent { color: var(--orange-2); }
+
+    .cover-subtitle {
+      max-width: 940px;
+      margin-top: 28px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 25px;
+      line-height: 1.58;
+      font-weight: 700;
+    }
+
+    .cover-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 52px;
+    }
+
+    .meta-card {
+      min-height: 150px;
+      padding: 22px;
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    .meta-card b {
+      display: block;
+      color: #fff;
+      font-size: 28px;
+      line-height: 1.25;
+      margin-bottom: 12px;
+    }
+
+    .meta-card span {
+      display: block;
+      font-size: 17px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
+    .cover-panel {
+      padding: 30px;
+      border-radius: 30px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.08);
+      display: grid;
+      align-content: space-between;
+      min-height: 0;
+    }
+
+    .cover-panel h3 {
+      color: #fff;
+      font-size: 32px;
+      line-height: 1.25;
+      margin-bottom: 22px;
+    }
+
+    .route-list {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .route-list li {
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.10);
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 18px;
+      line-height: 1.42;
+      font-weight: 700;
+    }
+
+    .route-list b {
+      color: var(--orange-2);
+      margin-right: 10px;
+    }
+
+    @media (max-width: 1280px) {
+      .canvas {
+        width: calc(100vw - 28px);
+        max-height: none;
+        aspect-ratio: auto;
+        min-height: calc(100vh - 28px);
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4,
+      .cols-left,
+      .cols-right,
+      .process,
+      .mini-row {
+        grid-template-columns: 1fr;
+      }
+
+      .big-title { font-size: 44px; }
+      .process-card::after { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hud" aria-hidden="true">
+    <div class="progress"><span id="progressBar"></span></div>
+    <div class="pager"><span id="pageIndex">01</span> / 17</div>
+  </div>
+
+  <main>
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>项目阶段汇报</div></div>
+        <div class="cover-body">
+          <div>
+            <div class="section-label">项目汇报</div>
+            <h1 class="cover-title">小智伴学<br><span class="accent">专注监督系统</span></h1>
+            <p class="cover-subtitle">面向桌面伴学机器人的学习状态监督方案。系统采用手机摄像头采集、电脑端视觉分析、家长端决策控制与 MCP 机器人提醒的技术路线。</p>
+            <div class="cover-meta">
+              <div class="meta-card"><b>采集端</b><span>废旧手机或平板作为局域网摄像头，降低硬件改造成本。</span></div>
+              <div class="meta-card"><b>分析端</b><span>电脑端承载视频接入、专注度识别、趋势统计与 AI 辅助分析。</span></div>
+              <div class="meta-card"><b>执行端</b><span>家长确认后通过 MCP 向小智发送提醒，形成监督闭环。</span></div>
+            </div>
+          </div>
+          <div class="cover-panel">
+            <div>
+              <h3>汇报重点</h3>
+              <ul class="route-list">
+                <li><b>01</b>硬件限制下的替代采集方案</li>
+                <li><b>02</b>电脑端专注度识别与数据可视化</li>
+                <li><b>03</b>家长端人工调控与信任机制设计</li>
+                <li><b>04</b>DeepSeek 辅助分析与小智提醒联动</li>
+                <li><b>05</b>MCP 通信联调与后续交付计划</li>
+              </ul>
+            </div>
+            <div class="callout">本项目重点为围绕真实使用约束构建可演示、可扩展、可联动的端到端系统。</div>
+          </div>
+        </div>
+        <div class="foot"><span>手机采集 · 电脑分析 · 家长决策 · 小智执行</span><span>01 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>痛点定义</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">需求背景</div>
+            <h2 class="big-title">问题与约束</h2>
+          </div>
+          <div class="grid-3">
+            <div class="card fit-card">
+              <div class="image-wrap cover" style="height: 280px;"><img src="figures/废旧手机，平板成为摄像头，需要下载这个软件使其成为一个网络摄像头方便被调用.jpg" alt="旧手机摄像头"></div>
+              <h3 class="card-title">硬件接口受限</h3>
+              <p class="card-desc compact-desc">现有小智机器人不便继续扩展摄像头模块，直接改动硬件会增加接口适配、供电和结构安装风险。</p>
+            </div>
+            <div class="card fit-card">
+              <div class="image-wrap cover" style="height: 280px;"><img src="figures/成功调用平板的摄像头.jpg" alt="平板摄像头调用"></div>
+              <h3 class="card-title">端侧算力有限</h3>
+              <p class="card-desc compact-desc">专注度识别涉及视频流处理和多指标统计，手机端不承担算法，可降低发热、卡顿和维护复杂度。</p>
+            </div>
+            <div class="card fit-card">
+              <div class="image-wrap cover" style="height: 280px;"><img src="figures/UI总览2.png" alt="家长端"></div>
+              <h3 class="card-title">家长信任要求</h3>
+              <p class="card-desc compact-desc">家长通常希望保留确认与干预权，因此系统需要提供人工调控入口，而非完全由机器人自主判断。</p>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>问题定义：硬件接口、端侧算力、家长信任</span><span>02 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>总体方案</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">系统设计</div>
+            <h2 class="big-title">总体架构</h2>
+          </div>
+          <div class="process">
+            <div class="process-card"><small>INPUT</small><strong>手机 / 平板采集</strong><span>运行 IP Webcam，将闲置设备转换为局域网视频输入。</span></div>
+            <div class="process-card"><small>STREAM</small><strong>电脑端接入</strong><span>接收视频流或截图流，并统一管理视频源状态。</span></div>
+            <div class="process-card"><small>VISION</small><strong>状态识别</strong><span>计算专注度、姿态稳定性、在座状态和离座时长。</span></div>
+            <div class="process-card"><small>CONSOLE</small><strong>家长端决策</strong><span>集中展示画面、指标、趋势、提醒控制和 AI 建议。</span></div>
+            <div class="process-card"><small>ACTION</small><strong>小智端执行</strong><span>通过 MCP 发送提醒消息，由小智完成语音提醒。</span></div>
+          </div>
+        </div>
+        <div class="foot"><span>技术路线：采集、分析、决策、执行</span><span>03 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>设备部署</div></div>
+        <div class="body cols-right">
+          <div>
+            <div class="section-label">网络部署</div>
+            <h2 class="big-title">部署方案</h2>
+            <div class="info-table">
+              <div class="row"><b>手机端</b><span>运行 IP Webcam，仅负责图像采集和局域网传输，不部署识别算法。</span></div>
+              <div class="row"><b>电脑端</b><span>运行后端服务、视觉分析模块、家长端页面和 DeepSeek 调用入口。</span></div>
+              <div class="row"><b>小智端</b><span>通过 MCP 接收提醒指令，负责对孩子发出语音或动作提醒。</span></div>
+              <div class="row"><b>家长端</b><span>保留确认、手动留言、AI 辅助判断和一键发送提醒能力。</span></div>
+            </div>
+          </div>
+          <div class="card fit-card">
+            <div class="image-wrap cover" style="height: 390px;"><img src="figures/成功调用平板的摄像头.jpg" alt="成功调用摄像头"></div>
+            <h3 class="card-title">采集链路验证</h3>
+            <p class="card-desc compact-desc">已完成局域网内平板摄像头调用，验证闲置移动设备作为视频输入端的可行性。</p>
+          </div>
+        </div>
+        <div class="foot"><span>部署原则：低成本、低改造、便于调试</span><span>04 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>视频源接入</div></div>
+        <div class="body cols-left">
+          <div>
+            <div class="section-label">视频接入</div>
+            <h2 class="big-title">视频源管理</h2>
+            <ul class="dense-list">
+              <li>兼容 IP Webcam 的连续视频流与静态截图地址。</li>
+              <li>支持视频源新增、切换与删除，便于替换采集设备。</li>
+              <li>后端统一维护视频源配置，前端负责展示与操作。</li>
+              <li>接口设计保留多摄像头和备用视频源扩展空间。</li>
+            </ul>
+            <div class="callout">该模块将视频输入从固定地址改为可配置资源，提升了系统调试和后续部署的可维护性。</div>
+          </div>
+          <div class="card fit-card">
+            <div class="image-wrap contain" style="height: 455px;"><img src="figures/通过添加视频源调用手机摄像头.png" alt="添加视频源"></div>
+            <h3 class="card-title">视频源配置界面</h3>
+          </div>
+        </div>
+        <div class="foot"><span>输入层实现：视频流接入、设备切换、配置管理</span><span>05 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>视觉识别</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">视觉分析</div>
+            <h2 class="big-title">视觉识别模块</h2>
+          </div>
+          <div class="grid-2">
+            <div class="card fit-card">
+              <div class="image-wrap contain" style="height: 360px;"><img src="figures/meidiapipe提取面部特征点-专注.png" alt="专注特征点"></div>
+              <h3 class="card-title">稳定学习样本</h3>
+              <p class="card-desc compact-desc">人脸位于有效区域，视线方向和头部姿态较稳定，可作为专注状态判断的重要依据。</p>
+            </div>
+            <div class="card fit-card">
+              <div class="image-wrap contain" style="height: 360px;"><img src="figures/miediapipe提取面部特征点-非专注.png" alt="非专注特征点"></div>
+              <h3 class="card-title">异常状态样本</h3>
+              <p class="card-desc compact-desc">当人脸偏移、姿态变化明显或短时未检测到有效人脸时，系统进入分心或离座观察区间。</p>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>识别依据：人脸特征点、姿态变化、检测稳定性</span><span>06 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>状态机策略</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">提醒策略</div>
+            <h2 class="big-title">状态分级策略</h2>
+          </div>
+          <div class="grid-4">
+            <div class="state-card"><div class="dot"></div><h3>稳定学习</h3><p>各项指标保持稳定，系统仅记录过程数据。</p><div class="evidence-box">不触发提醒，保留趋势记录。</div></div>
+            <div class="state-card"><div class="dot"></div><h3>轻度分心</h3><p>视线、坐姿或稳定性出现短时波动。</p><div class="evidence-box">建议采用低干扰提醒。</div></div>
+            <div class="state-card"><div class="dot"></div><h3>短暂离座</h3><p>短时间未检测到有效人脸或在座状态下降。</p><div class="evidence-box">进入观察窗口，避免立即误报。</div></div>
+            <div class="state-card"><div class="dot"></div><h3>超时离座</h3><p>离座时间超过设定阈值，需要外部提醒介入。</p><div class="evidence-box">由家长确认后发送小智提醒。</div></div>
+          </div>
+        </div>
+        <div class="foot"><span>策略目标：降低误报，控制提醒频率</span><span>07 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>趋势分析</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">数据统计</div>
+            <h2 class="big-title">趋势统计</h2>
+          </div>
+          <div class="card" style="padding: 22px;">
+            <div class="image-wrap contain" style="height: 330px;"><img src="figures/多项专注指标的趋势可视化.png" alt="趋势图"></div>
+            <div class="mini-row">
+              <div class="mini">专注度变化</div>
+              <div class="mini">姿态稳定性</div>
+              <div class="mini">在座覆盖率</div>
+            </div>
+            <p class="card-desc" style="margin-top: 18px;">趋势图用于记录一段时间内的学习状态变化，避免仅依据单帧画面做出提醒判断。</p>
+          </div>
+        </div>
+        <div class="foot"><span>数据展示：从瞬时识别扩展到过程评估</span><span>08 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>家长端界面</div></div>
+        <div class="body cols-left">
+          <div>
+            <div class="section-label">家长端界面</div>
+            <h2 class="big-title">家长端工作台</h2>
+            <ul class="dense-list">
+              <li>集中展示实时画面、视觉指标、趋势图和事件时间线。</li>
+              <li>AI 分析结果作为辅助依据，提醒发送仍保留家长确认入口。</li>
+              <li>支持预设提醒、家长留言和 AI 建议话术三类提醒方式。</li>
+              <li>通过人工调控提高家长对监督过程的可理解性和信任度。</li>
+            </ul>
+            <div class="callout">家长端承担监督解释与人工确认功能，是算法判断进入家庭教育场景前的重要缓冲层。</div>
+          </div>
+          <div class="panel" style="padding: 22px;">
+            <div class="image-wrap contain" style="height: 610px;"><img src="figures/UI总览2.png" alt="UI总览"></div>
+          </div>
+        </div>
+        <div class="foot"><span>界面功能：监看、判断、提醒、回看</span><span>09 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>AI 决策</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">智能分析</div>
+            <h2 class="big-title">AI 辅助决策</h2>
+          </div>
+          <div class="grid-3">
+            <div class="card fit-card">
+              <div class="image-wrap contain" style="height: 320px;"><img src="figures/调用deepseek-v4模型对数据进行智能综合分析.png" alt="deepseek分析"></div>
+              <h3 class="card-title">综合分析输出</h3>
+              <p class="card-desc compact-desc">基于当前视觉指标和趋势数据，生成状态判断、观察依据、干预建议和提醒等级。</p>
+            </div>
+            <div class="card fit-card">
+              <div class="image-wrap contain" style="height: 320px;"><img src="figures/可以快速发送ai建议的提，也可以随时进行手动提醒.png" alt="发送提醒"></div>
+              <h3 class="card-title">提醒话术生成</h3>
+              <p class="card-desc compact-desc">AI 建议可转换为小智提醒话术，也支持家长根据现场情况手动编辑提醒内容。</p>
+            </div>
+            <div class="card">
+              <h3 class="card-title" style="margin-top:0;">调用策略</h3>
+              <p class="card-desc">DeepSeek 采用手动触发方式，不进行自动周期调用，以控制 API 成本并保留人工判断。</p>
+              <div class="info-table">
+                <div class="row"><b>模型</b><span>deepseek-v4-flash</span></div>
+                <div class="row"><b>触发</b><span>家长手动点击</span></div>
+                <div class="row"><b>输出</b><span>建议、依据、话术</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>AI 定位：提供依据和建议，不替代家长决策</span><span>10 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>MCP 闭环</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">机器人联动</div>
+            <h2 class="big-title">MCP 提醒闭环</h2>
+          </div>
+          <div class="process">
+            <div class="process-card"><small>01</small><strong>状态识别</strong><span>电脑端根据画面分析得到专注、分心或离座状态。</span></div>
+            <div class="process-card"><small>02</small><strong>提醒确认</strong><span>家长结合实时画面、趋势数据和 AI 建议进行确认。</span></div>
+            <div class="process-card"><small>03</small><strong>消息封装</strong><span>整理提醒文本、来源类型、提醒等级和时间戳。</span></div>
+            <div class="process-card"><small>04</small><strong>MCP 通信</strong><span>通过 MCP 通道向小智机器人发送结构化提醒消息。</span></div>
+            <div class="process-card"><small>05</small><strong>机器人执行</strong><span>小智以语音方式对孩子进行温和学习提醒。</span></div>
+          </div>
+        </div>
+        <div class="foot"><span>联动目标：电脑端判断结果最终由小智执行</span><span>11 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>MCP 联调</div></div>
+        <div class="body cols-left">
+          <div>
+            <div class="section-label">通信联调</div>
+            <h2 class="big-title">MCP 联调计划</h2>
+            <div class="info-table">
+              <div class="row"><b>输入来源</b><span>手动提醒、AI 建议和状态告警均可生成待发送消息。</span></div>
+              <div class="row"><b>消息字段</b><span>包含提醒文本、提醒等级、来源类型、时间戳和目标设备。</span></div>
+              <div class="row"><b>验证目标</b><span>确认请求格式、返回状态、小智端接收结果和语音执行效果。</span></div>
+              <div class="row"><b>补充材料</b><span>后续补充通信日志、请求体截图、回包截图和小智响应截图。</span></div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="blank-box"><div><strong>截图预留 1</strong><span>MCP 发送日志 / 请求体</span></div></div>
+            <div class="blank-box"><div><strong>截图预留 2</strong><span>小智回包 / 执行结果</span></div></div>
+          </div>
+        </div>
+        <div class="foot"><span>当前状态：消息结构已规划，等待完整联调截图补充</span><span>12 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>预留页</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">材料预留</div>
+            <h2 class="big-title">联调截图</h2>
+          </div>
+          <div class="blank-box"><div><strong>预留图片区域 1</strong><span>用于放置 MCP 请求体、发送日志或接口回包截图。</span></div></div>
+        </div>
+        <div class="foot"><span>后续补充材料</span><span>13 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>预留页</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">材料预留</div>
+            <h2 class="big-title">补充材料</h2>
+          </div>
+          <div class="blank-box"><div><strong>预留图片区域 2</strong><span>用于放置后续测试截图、演示结果或老师要求补充的材料。</span></div></div>
+        </div>
+        <div class="foot"><span>后续补充材料</span><span>14 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>工程工作量</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">实现工作</div>
+            <h2 class="big-title">工程实现内容</h2>
+          </div>
+          <div class="grid-3">
+            <div class="dark-card"><h3 class="dense-title">视频与后端</h3><ul class="dense-list"><li>IP Webcam 视频流接入</li><li>视频源配置管理</li><li>状态数据接口设计</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">视觉与状态</h3><ul class="dense-list"><li>人脸与姿态特征提取</li><li>专注度综合评分</li><li>离座时长与状态机</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">家长端 UI</h3><ul class="dense-list"><li>实时画面与指标面板</li><li>趋势图与时间线展示</li><li>提醒控制与话术选择</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">AI 接入</h3><ul class="dense-list"><li>DeepSeek 手动调用</li><li>分析依据与行动建议</li><li>小智提醒话术生成</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">MCP 联动</h3><ul class="dense-list"><li>提醒消息字段设计</li><li>发送通道接口预留</li><li>联调材料页面预留</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">汇报材料</h3><ul class="dense-list"><li>运行截图整理</li><li>HTML 汇报 PPT 制作</li><li>后续补图结构预留</li></ul></div>
+          </div>
+        </div>
+        <div class="foot"><span>工作范围：采集、识别、界面、AI、通信、汇报材料</span><span>15 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas light">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>阶段成果</div></div>
+        <div class="body cols-right">
+          <div>
+            <div class="section-label">阶段总结</div>
+            <h2 class="big-title">阶段成果</h2>
+            <div class="info-table">
+              <div class="row"><b>视频接入</b><span>已完成局域网视频流调用、视频源配置和设备切换验证。</span></div>
+              <div class="row"><b>视觉分析</b><span>已完成专注度、坐姿稳定性、在座状态和离座时长展示。</span></div>
+              <div class="row"><b>家长端</b><span>已完成实时监看、趋势统计、提醒控制和 AI 辅助分析界面。</span></div>
+              <div class="row"><b>提醒链路</b><span>已完成消息结构和发送入口设计，MCP 真实联调继续推进。</span></div>
+            </div>
+          </div>
+          <div class="card fit-card">
+            <div class="image-wrap contain" style="height: 440px;"><img src="figures/UI总览1.png" alt="阶段成果"></div>
+            <h3 class="card-title">家长端运行界面</h3>
+          </div>
+        </div>
+        <div class="foot"><span>阶段结论：系统主链路已成型，通信联调继续完善</span><span>16 / 17</span></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="canvas">
+        <div class="topbar"><div class="brand"><span class="brand-dot"></span> xiaozhi-study</div><div>后续工作</div></div>
+        <div class="body">
+          <div>
+            <div class="section-label">后续计划</div>
+            <h2 class="big-title">后续工作</h2>
+          </div>
+          <div class="grid-3">
+            <div class="dark-card"><h3 class="dense-title">识别稳定性</h3><ul class="dense-list"><li>优化专注度评分阈值</li><li>降低转头造成的误判</li><li>补充不同光照场景测试</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">MCP 联调</h3><ul class="dense-list"><li>完成小智端回包确认</li><li>补充真实通信截图</li><li>建立提醒等级映射关系</li></ul></div>
+            <div class="dark-card"><h3 class="dense-title">汇报交付</h3><ul class="dense-list"><li>完善平台使用说明</li><li>整理现场演示流程</li><li>补充最终测试材料</li></ul></div>
+          </div>
+          <div class="callout">后续目标是完成 MCP 真实通信验证，并提升识别稳定性，使系统达到可连续演示和可进一步部署的状态。</div>
+        </div>
+        <div class="foot"><span>总结与后续计划</span><span>17 / 17</span></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const progressBar = document.getElementById('progressBar');
+    const pageIndex = document.getElementById('pageIndex');
+    function updateHud() {
+      const index = Math.min(slides.length - 1, Math.max(0, Math.round(window.scrollY / window.innerHeight)));
+      progressBar.style.width = `${((index + 1) / slides.length) * 100}%`;
+      pageIndex.textContent = String(index + 1).padStart(2, '0');
+    }
+    addEventListener('scroll', updateHud, { passive: true });
+    addEventListener('resize', updateHud);
+    addEventListener('load', updateHud);
+    addEventListener('keydown', (event) => {
+      if (['ArrowDown', 'PageDown', ' '].includes(event.key)) {
+        event.preventDefault();
+        scrollBy({ top: innerHeight, behavior: 'smooth' });
+      }
+      if (['ArrowUp', 'PageUp'].includes(event.key)) {
+        event.preventDefault();
+        scrollBy({ top: -innerHeight, behavior: 'smooth' });
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
+    });
+  </script>
+</body>
+</html>

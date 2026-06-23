@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>小智伴学家长工作台</title>
+    <link rel="stylesheet" href="/static/parent-console.css" />
+  </head>
+  <body>
+    <main class="console-shell">
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <p class="eyebrow">FAMILY STUDY EDGE NODE</p>
+          <h1>小智伴学家长工作台</h1>
+          <p class="hero-desc">
+            手机只作为网络摄像头，电脑端完成专注度分析、提醒策略和小智联动。
+          </p>
+        </div>
+        <div class="hero-status">
+          <span class="connection-chip" id="engineMode">启动中</span>
+          <span class="connection-chip" id="connectionLabel">正在连接本地节点</span>
+        </div>
+      </section>
+
+      <section class="status-strip">
+        <article class="score-card">
+          <div class="score-main">
+            <div class="status-pill" id="statusPill">稳定学习</div>
+            <div class="score-row">
+              <span class="score-number" id="focusScore">82</span>
+              <span class="score-label">综合专注度</span>
+            </div>
+          </div>
+          <div class="away-widget" id="awayWidget">
+            <span class="away-label">离座时长</span>
+            <strong id="awayDuration">00分00秒</strong>
+            <small id="awayStatus">当前在座</small>
+          </div>
+        </article>
+        <article class="summary-card">
+          <span class="summary-label">当前视频源</span>
+          <strong id="sourceLabel">等待视频源</strong>
+        </article>
+        <article class="summary-card">
+          <span class="summary-label">最近事件</span>
+          <strong id="microHint">视觉节点待命</strong>
+        </article>
+        <article class="summary-card">
+          <span class="summary-label">最近刷新</span>
+          <strong id="lastUpdateSummary">--:--:--</strong>
+        </article>
+      </section>
+
+      <section class="main-grid">
+        <article class="panel video-panel">
+          <div class="panel-header">
+            <div>
+              <h2>主视窗与离座预警</h2>
+              <p>手机网络摄像头画面进入这台电脑的本地后端后，会在这里显示分析后的画面。</p>
+            </div>
+          </div>
+
+          <div class="frame-shell" id="frameShell">
+            <img id="videoFrame" alt="专注度分析视频画面" />
+            <div class="frame-overlay">
+              <span class="status-pill compact" id="frameStatus">稳定学习</span>
+              <span class="score-badge" id="frameScore">专注度 82</span>
+            </div>
+            <div class="timeout-mask" id="timeoutMask">
+              <span>超时离座预警</span>
+              <strong id="awayCountdown">00分00秒</strong>
+              <p>建议先确认真实场景，再决定是否通过小智提醒。</p>
+            </div>
+          </div>
+
+          <div class="video-meta">
+            <span id="lastUpdateText">最近刷新：--:--:--</span>
+            <span>渲染方式：MJPEG 本地预览</span>
+          </div>
+        </article>
+
+        <aside class="side-stack">
+          <article class="panel reminder-panel">
+            <div class="panel-header">
+              <div>
+                <h2>提醒控制</h2>
+                <p>先手动验证，再接入自动提醒和小智 MCP。</p>
+              </div>
+            </div>
+            <div class="reminder-grid">
+              <button data-command="voice_talk" type="button">语音对话</button>
+              <button data-command="remind_posture" type="button">姿态提醒</button>
+              <button data-command="remind_break" type="button">休息提醒</button>
+              <button data-command="refresh_stream" type="button">刷新视频</button>
+            </div>
+            <label class="message-box">
+              <span>家长留言</span>
+              <textarea id="parentMessage" rows="4" placeholder="例如：宝贝，我们把注意力放回书本上，再坚持十分钟。"></textarea>
+            </label>
+            <button class="primary-action" id="sendMessageButton" type="button">发送给小智</button>
+            <p class="control-result" id="controlResult">等待提醒指令。</p>
+          </article>
+
+          <article class="panel metrics-panel">
+            <div class="panel-header">
+              <div>
+                <h2>视觉指标</h2>
+                <p>电脑端根据视频流实时计算。</p>
+              </div>
+            </div>
+            <div class="metric-list" id="metricList"></div>
+          </article>
+        </aside>
+      </section>
+
+      <section class="analytics-grid">
+        <article class="panel analytics-panel trend-panel">
+          <div class="panel-header">
+            <div>
+              <h2>趋势分析</h2>
+              <p>专注度、视线、坐姿和稳定性随时间变化。</p>
+            </div>
+          </div>
+          <div class="chart-legend" id="trendLegend"></div>
+          <div class="trend-chart" id="trendChart"></div>
+        </article>
+
+        <article class="panel analytics-panel distribution-panel">
+          <div class="panel-header">
+            <div>
+              <h2>状态分布</h2>
+              <p>最近采样中的专注、分心与离座占比。</p>
+            </div>
+          </div>
+          <div class="donut-wrap">
+            <div class="status-donut" id="statusDonut"></div>
+            <div class="donut-copy" id="donutCopy"></div>
+          </div>
+        </article>
+
+        <article class="panel analytics-panel spark-panel">
+          <div class="panel-header">
+            <div>
+              <h2>指标小结</h2>
+              <p>各项视觉指标的最近趋势。</p>
+            </div>
+          </div>
+          <div class="spark-grid" id="metricSparkGrid"></div>
+        </article>
+      </section>
+
+      <section class="lower-grid">
+        <article class="panel source-panel">
+          <div class="panel-header">
+            <div>
+              <h2>视频源</h2>
+              <p>把 IP Webcam 的 /video 或 /shot.jpg 接入本地节点。</p>
+            </div>
+            <button class="ghost-button" id="refreshSourcesButton" type="button">刷新</button>
+          </div>
+          <form class="source-form" id="sourceForm">
+            <input id="sourceName" maxlength="60" placeholder="IP Webcam 手机摄像头" />
+            <input id="sourceUrl" placeholder="http://192.168.137.71:8080/video" />
+            <select id="sourceTransport">
+              <option value="stream">连续视频流</option>
+              <option value="snapshot">截图地址</option>
+            </select>
+            <button type="submit">添加视频源</button>
+          </form>
+          <div class="source-list" id="sourceList"></div>
+        </article>
+
+        <article class="panel timeline-panel">
+          <div class="panel-header">
+            <div>
+              <h2>事件时间线</h2>
+              <p>状态变化和提醒判断会保留在这里。</p>
+            </div>
+          </div>
+          <div class="timeline-stats" id="timelineStats"></div>
+          <div class="heatmap" id="heatmap"></div>
+          <div class="timeline" id="timeline"></div>
+        </article>
+
+        <article class="panel advisor-panel">
+          <div class="panel-header">
+            <div>
+              <h2>AI 决策建议</h2>
+              <p>只在你手动点击时调用 DeepSeek，不自动分析。</p>
+            </div>
+            <button class="smart-button" id="manualAiButton" type="button">智能分析</button>
+          </div>
+          <div class="advisor-scroll">
+            <div class="ai-meta-row">
+              <span id="aiModelLabel">DeepSeek 待命</span>
+              <span id="aiCostLabel">手动触发</span>
+            </div>
+            <h3 id="advisorTitle">保持节奏，减少无效干预</h3>
+            <p id="advisorSummary">
+              整体状态平稳，建议以陪伴式观察为主，而不是高频打断式管理。
+            </p>
+            <div class="ai-script" id="aiScriptBox">
+              <span>小智话术</span>
+              <strong id="aiScriptText">暂无，需要时点击智能分析。</strong>
+              <div class="ai-script-actions">
+                <button class="script-send-button" id="sendAiScriptButton" type="button" disabled>发送这句提醒</button>
+                <small id="aiScriptHint">智能分析后可一键转为小智提醒。</small>
+              </div>
+            </div>
+            <ul id="advisorBullets"></ul>
+            <div class="ai-detail-grid" id="aiDetailGrid"></div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/static/parent-console.js"></script>
+  </body>
+</html>

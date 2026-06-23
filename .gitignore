@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.venv-backend/
+.venv-focus/
+backend/*.log
+.claude/
+.codegraph/
