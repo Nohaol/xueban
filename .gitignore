@@ -6,3 +6,8 @@ __pycache__/
 backend/*.log
 .claude/
 .codegraph/
+focus_lab/
+ppt制作/
+小智MCP文档/
+DESKTOP_PARENT_CONSOLE_PLAN.md
+FOCUS_ALGORITHM_OPTIMIZATION_PLAN.md

@@ -2,7 +2,7 @@
 
 `xueban` 是一个运行在电脑端的家长伴学工作台原型。它用 `FastAPI + OpenCV` 接入本机摄像头或手机 `IP Webcam`，在浏览器里提供实时学习画面、专注状态、事件记录、AI 建议和视频源管理。
 
-当前项目重点是本地后端和浏览器控制台，仓库里原来的微信小程序目录只作为历史保留。
+当前仓库聚焦于产品代码：本地后端、浏览器控制台和必要的运行说明文档。
 
 ## What It Does
 
@@ -39,6 +39,8 @@
 │     └─ parent-console-v2.js
 ├─ DESIGN.md
 ├─ PLATFORM_USAGE.md
+├─ docs/
+│  └─ backend-service.md
 └─ README.md
 ```
 
@@ -170,6 +172,7 @@ Check Python syntax:
 - The V2 dashboard uses a snapshot-refresh strategy rather than a native streaming player.
 - Network video sources can fail fast and retry with cooldown instead of freezing the whole session.
 - The connection label in the top-right now distinguishes between stable local video and a reconnecting WebSocket status channel.
+- Local research material, PPT assets, and internal integration notes are intentionally excluded from this GitHub repository.
 
 ## Ignore Before Publishing
 
