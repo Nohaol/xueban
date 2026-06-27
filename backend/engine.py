@@ -97,6 +97,11 @@ class FocusEngine:
         self._capture = None
         self._frame_counter = 0
         self._last_control = {"command": "", "text": "", "received_at": 0.0}
+        self._settings = {
+            "xiaozhiMcpUrl": "",
+            "xiaozhiMcpToken": "",
+            "ageMode": "middle",
+        }
         self._mode = "boot"
         self._away_started_at: float | None = None
         self._presence_history: Deque[tuple[float, bool]] = deque()
@@ -143,8 +148,56 @@ class FocusEngine:
     def get_payload(self) -> dict:
         with self._lock:
             if hasattr(self._latest_payload, "model_dump"):
-                return self._latest_payload.model_dump()
-            return self._latest_payload.dict()
+                payload = self._latest_payload.model_dump()
+            else:
+                payload = self._latest_payload.dict()
+            return self._apply_age_mode(payload)
+
+    def get_settings(self) -> dict:
+        with self._lock:
+            return {
+                "awayTimeoutMinutes": max(1, int(round(self.config.away_timeout_seconds / 60))),
+                "xiaozhiMcpUrl": self._settings.get("xiaozhiMcpUrl", ""),
+                "xiaozhiMcpToken": self._settings.get("xiaozhiMcpToken", ""),
+                "ageMode": self._settings.get("ageMode", "middle"),
+            }
+
+    def update_settings(self, settings: dict) -> dict:
+        with self._lock:
+            minutes = int(settings.get("awayTimeoutMinutes", self.config.away_timeout_seconds // 60))
+            self.config.away_timeout_seconds = max(60, min(minutes * 60, 120 * 60))
+            self._settings["xiaozhiMcpUrl"] = str(settings.get("xiaozhiMcpUrl", "")).strip()
+            self._settings["xiaozhiMcpToken"] = str(settings.get("xiaozhiMcpToken", "")).strip()
+            self._settings["ageMode"] = str(settings.get("ageMode", "middle") or "middle")
+            return {
+                "awayTimeoutMinutes": max(1, int(round(self.config.away_timeout_seconds / 60))),
+                "xiaozhiMcpUrl": self._settings.get("xiaozhiMcpUrl", ""),
+                "xiaozhiMcpToken": self._settings.get("xiaozhiMcpToken", ""),
+                "ageMode": self._settings.get("ageMode", "middle"),
+            }
+
+    def _apply_age_mode(self, payload: dict) -> dict:
+        mode = self._settings.get("ageMode", "middle")
+        if mode == "primary":
+            metric_delta, score_delta = 4, 3
+        elif mode == "high":
+            metric_delta, score_delta = -7, -6
+        else:
+            metric_delta, score_delta = 0, 0
+
+        if metric_delta:
+            metrics = dict(payload.get("metrics") or {})
+            for key in ("gaze", "posture", "stability"):
+                metrics[key] = self._clamp(float(metrics.get(key, 0)) + metric_delta)
+            payload["metrics"] = metrics
+
+        adjusted_score = self._clamp(float(payload.get("focusScore", 0)) + score_delta)
+        payload["focusScore"] = adjusted_score
+        if mode == "high" and payload.get("status") == "normal" and adjusted_score < 68:
+            payload["status"] = "distracted"
+        if mode == "primary" and payload.get("status") == "distracted" and adjusted_score >= 60:
+            payload["status"] = "normal"
+        return payload
 
     def get_snapshot_bytes(self) -> bytes:
         with self._lock:
@@ -771,14 +824,20 @@ class FocusEngine:
             },
             "screen": {},
             "thresholds": {
+                "yawSafeDelta": 12,
                 "yawSoftDelta": 12,
                 "yawHardDelta": 25,
+                "pitchSafeDelta": 12,
                 "pitchSoftDelta": 15,
                 "pitchHardDelta": 30,
+                "rollSafeDelta": 8,
                 "rollHardDelta": 22,
+                "centerSafeDelta": 0.08,
                 "centerHardDelta": 0.24,
                 "areaMinRatio": 0.55,
                 "areaMaxRatio": 1.8,
+                "areaHardMinRatio": 0.35,
+                "areaHardMaxRatio": 2.6,
                 "eyeClosedRatio": 0.55,
             },
         }
@@ -802,7 +861,7 @@ class FocusEngine:
             return "flow" if score >= 86 else "normal"
         if mp_status == "distracted" or mp_status == "fatigue":
             return "distracted"
-        return "normal" if score >= 68 else "distracted"
+        return "normal"
 
     def _metrics_from_mediapipe_state(self, state: dict, features: dict) -> FocusMetrics:
         subs = state.get("subScores", {}) or {}

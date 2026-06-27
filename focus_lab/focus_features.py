@@ -82,8 +82,16 @@ class Calibration:
         return float(self.data.get("thresholds", {}).get("yawSoftDelta", 15.0))
 
     @property
+    def yaw_safe_delta(self) -> float:
+        return float(self.data.get("thresholds", {}).get("yawSafeDelta", self.yaw_soft_delta))
+
+    @property
     def yaw_hard_delta(self) -> float:
         return float(self.data.get("thresholds", {}).get("yawHardDelta", 25.0))
+
+    @property
+    def pitch_safe_delta(self) -> float:
+        return float(self.data.get("thresholds", {}).get("pitchSafeDelta", self.data.get("thresholds", {}).get("pitchSoftDelta", 12.0)))
 
     @property
     def pitch_writing_delta(self) -> float:
@@ -94,8 +102,16 @@ class Calibration:
         return float(self.data.get("thresholds", {}).get("pitchHardDelta", 30.0))
 
     @property
+    def roll_safe_delta(self) -> float:
+        return float(self.data.get("thresholds", {}).get("rollSafeDelta", 8.0))
+
+    @property
     def roll_hard_delta(self) -> float:
         return float(self.data.get("thresholds", {}).get("rollHardDelta", 22.0))
+
+    @property
+    def center_safe_delta(self) -> float:
+        return float(self.data.get("thresholds", {}).get("centerSafeDelta", 0.08))
 
     @property
     def center_hard_delta(self) -> float:
@@ -108,6 +124,14 @@ class Calibration:
     @property
     def area_max_ratio(self) -> float:
         return float(self.data.get("thresholds", {}).get("areaMaxRatio", 1.8))
+
+    @property
+    def area_hard_min_ratio(self) -> float:
+        return float(self.data.get("thresholds", {}).get("areaHardMinRatio", 0.35))
+
+    @property
+    def area_hard_max_ratio(self) -> float:
+        return float(self.data.get("thresholds", {}).get("areaHardMaxRatio", 2.6))
 
     @property
     def eye_closed_ratio(self) -> float:
@@ -358,6 +382,29 @@ def no_face_features() -> dict:
 # ── Sub-scores (0-1 scale) ──────────────────────────────────────
 def clamp01(v: float) -> float:
     return max(0.0, min(1.0, v))
+
+
+def safe_quadratic_score(delta: float, safe_delta: float, hard_delta: float) -> float:
+    """Return 1 inside the safe band, then fall quadratically to 0."""
+    if delta <= safe_delta:
+        return 1.0
+    span = max(hard_delta - safe_delta, 1e-6)
+    t = clamp01((delta - safe_delta) / span)
+    return clamp01(1.0 - t * t)
+
+
+def band_quadratic_score(value: float, safe_min: float, safe_max: float,
+                         hard_min: float, hard_max: float) -> float:
+    """Score a value with a no-penalty band and steeper outer penalties."""
+    if safe_min <= value <= safe_max:
+        return 1.0
+    if value < safe_min:
+        span = max(safe_min - hard_min, 1e-6)
+        t = clamp01((safe_min - value) / span)
+    else:
+        span = max(hard_max - safe_max, 1e-6)
+        t = clamp01((value - safe_max) / span)
+    return clamp01(1.0 - t * t)
 
 
 def compute_sub_scores(features: dict, recent_face_ratio: float,
@@ -659,7 +706,7 @@ class StateMachine:
                presence: bool, eyes_closed: bool) -> dict:
         away_s = float(stats.get("consecutiveAwaySeconds", 0.0))
         stable_face_s = float(stats.get("stableFaceSeconds", 0.0))
-        enough_full_window = float(stats.get("fullWindowSeconds", 0.0)) >= 15.0
+        enough_full_window = float(stats.get("fullWindowSeconds", 0.0)) >= 20.0
 
         if away_s >= 8.0:
             self._maybe_transition("away", 0.5, now_s)
@@ -679,20 +726,20 @@ class StateMachine:
 
         distraction_ready = (
             enough_full_window
-            and attention_debt >= 25.0
+            and attention_debt >= 35.0
             and (
-                float(stats.get("fullLowScoreRatio", 0.0)) >= 0.45
-                or float(stats.get("fullMedianScore", 100.0)) < 65.0
-                or float(stats.get("fullSevereScoreRatio", 0.0)) >= 0.25
+                float(stats.get("fullLowScoreRatio", 0.0)) >= 0.55
+                or float(stats.get("fullMedianScore", 100.0)) < 58.0
+                or float(stats.get("fullSevereScoreRatio", 0.0)) >= 0.32
             )
         )
         uncertainty_ready = (
-            attention_debt >= 18.0
-            or float(stats.get("shortLowScoreRatio", 0.0)) >= 0.35
-            or float(stats.get("shortMedianScore", 100.0)) < 68.0
+            attention_debt >= 24.0
+            or float(stats.get("shortLowScoreRatio", 0.0)) >= 0.50
+            or float(stats.get("shortMedianScore", 100.0)) < 60.0
         )
         recovery_ready = (
-            attention_debt <= 25.0
+            attention_debt <= 22.0
             and float(stats.get("recoveryHighScoreRatio", 0.0)) >= 0.70
             and float(stats.get("recoveryMedianScore", 0.0)) >= 75.0
             and stable_face_s >= 10.0
@@ -702,13 +749,13 @@ class StateMachine:
             self._maybe_transition("uncertain", 5.0, now_s, condition=uncertainty_ready)
         elif self.current == "uncertain":
             if distraction_ready:
-                self._maybe_transition("distracted", 8.0, now_s)
+                self._maybe_transition("distracted", 12.0, now_s)
             elif recovery_ready:
                 self._maybe_transition("focused", 12.0, now_s)
             else:
                 self._cancel_pending()
         elif self.current == "distracted":
-            self._maybe_transition("uncertain", 10.0, now_s, condition=attention_debt <= 35.0 and recovery_ready)
+            self._maybe_transition("uncertain", 8.0, now_s, condition=attention_debt <= 30.0 and recovery_ready)
         else:
             self._maybe_transition("uncertain", 4.0, now_s)
 
@@ -843,15 +890,15 @@ class FocusAnalyzer:
     def _update_attention_debt(self, raw_score: float, has_face: bool,
                                recent_face_ratio: float, eyes_closed: bool, dt: float) -> None:
         if not has_face:
-            delta = 2.0 * dt
+            delta = 1.8 * dt
         elif raw_score >= 75:
             delta = -1.2 * dt
         elif raw_score >= 60:
-            delta = 0.25 * dt
+            delta = 0.15 * dt
         elif raw_score >= 45:
-            delta = 0.8 * dt
+            delta = 0.45 * dt
         else:
-            delta = 1.6 * dt
+            delta = 1.0 * dt
         if recent_face_ratio < 0.7:
             delta += 0.4 * dt
         if eyes_closed:
@@ -906,9 +953,9 @@ class FocusAnalyzer:
                       stats: dict) -> dict:
         presence = features.get("faceVisible", False) and face_ratio >= 0.2
         reason_codes = build_reason_codes(subs or {}, features, face_ratio)
-        if self.attention_debt >= 25:
+        if self.attention_debt >= 35:
             reason_codes.append("attention_debt_high")
-        elif self.attention_debt >= 18:
+        elif self.attention_debt >= 24:
             reason_codes.append("attention_debt_rising")
         confidence = clamp01(face_ratio * 0.6 + (1.0 if features.get("frameReliable", False) else 0.0) * 0.4)
         return {
@@ -949,9 +996,9 @@ def compute_sub_scores(features: dict, recent_face_ratio: float,
     yaw_delta = abs(float(yaw) - cal.screen_yaw) if yaw is not None else 90.0
     pitch_delta = abs(float(pitch) - cal.screen_pitch) if pitch is not None else 90.0
     roll_delta = abs(float(roll) - cal.screen_roll) if roll is not None else 45.0
-    yaw_score = clamp01(1.0 - yaw_delta / max(cal.yaw_hard_delta, 1.0))
-    pitch_score = clamp01(1.0 - pitch_delta / max(cal.pitch_hard_delta, 1.0))
-    roll_score = clamp01(1.0 - roll_delta / max(cal.roll_hard_delta, 1.0))
+    yaw_score = safe_quadratic_score(yaw_delta, cal.yaw_safe_delta, cal.yaw_hard_delta)
+    pitch_score = safe_quadratic_score(pitch_delta, cal.pitch_safe_delta, cal.pitch_hard_delta)
+    roll_score = safe_quadratic_score(roll_delta, cal.roll_safe_delta, cal.roll_hard_delta)
     head_ori = yaw_score * 0.45 + pitch_score * 0.40 + roll_score * 0.15
 
     if eye_reliable and ear > 0.0:
@@ -964,18 +1011,19 @@ def compute_sub_scores(features: dict, recent_face_ratio: float,
 
     if center_x is not None and center_y is not None:
         center_delta = math.sqrt((float(center_x) - cal.face_center_x) ** 2 + (float(center_y) - cal.face_center_y) ** 2)
-        center_score = clamp01(1.0 - center_delta / max(cal.center_hard_delta, 0.01))
+        center_score = safe_quadratic_score(center_delta, cal.center_safe_delta, cal.center_hard_delta)
     else:
         center_score = 0.0
 
     if cal.face_box_area > 0 and area > 0:
         area_ratio = float(area) / max(cal.face_box_area, 1e-6)
-        if area_ratio < cal.area_min_ratio:
-            distance_score = clamp01(area_ratio / max(cal.area_min_ratio, 1e-6))
-        elif area_ratio > cal.area_max_ratio:
-            distance_score = clamp01(cal.area_max_ratio / area_ratio)
-        else:
-            distance_score = 1.0
+        distance_score = band_quadratic_score(
+            area_ratio,
+            cal.area_min_ratio,
+            cal.area_max_ratio,
+            cal.area_hard_min_ratio,
+            cal.area_hard_max_ratio,
+        )
     else:
         distance_score = 0.5
 

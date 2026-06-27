@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
@@ -67,7 +67,6 @@
       <section class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">FAMILY STUDY EDGE NODE</p>
             <h1 id="pageTitle">看护</h1>
           </div>
           <div class="topbar-status">
@@ -78,7 +77,19 @@
         </header>
 
         <section class="view active" id="view-watch">
-          <div class="watch-grid">
+          <div class="page-board">
+            <header class="page-command-bar">
+              <div class="page-logo">
+                <span class="brand-mark"><svg><use href="#icon-dashboard"></use></svg></span>
+                <strong>Dashboard</strong>
+              </div>
+              <div class="page-status">
+                <span class="review-chip" data-student-label>学生 A</span>
+                <span class="review-chip" data-session-timer>学习中 00:00</span>
+                <span class="review-chip" data-connection-label>正在连接本地节点</span>
+              </div>
+            </header>
+            <div class="watch-grid">
             <article class="surface video-surface">
               <div class="surface-head">
                 <div>
@@ -121,7 +132,7 @@
                 <div class="decision-actions">
                   <div class="action-row">
                     <button class="primary-action" id="primaryDecisionButton" type="button">继续观察</button>
-                    <button class="soft-action" id="manualAiButton" type="button">智能分析</button>
+                    <button class="soft-action" id="manualAiButton" type="button">生成复盘建议</button>
                   </div>
                   <div class="calibration-row" id="calibrationRow">
                     <button class="soft-action calibration-action" id="calibrationButton" type="button">姿态校准</button>
@@ -140,11 +151,24 @@
                 <div class="metric-list" id="metricList"></div>
               </article>
             </aside>
+            </div>
           </div>
         </section>
 
         <section class="view" id="view-advice">
-          <div class="advice-grid">
+          <div class="page-board">
+            <header class="page-command-bar">
+              <div class="page-logo">
+                <span class="brand-mark"><svg><use href="#icon-advice"></use></svg></span>
+                <strong>Advice</strong>
+              </div>
+              <div class="page-status">
+                <span class="review-chip" data-student-label>学生 A</span>
+                <span class="review-chip" data-session-timer>学习中 00:00</span>
+                <span class="review-chip" data-connection-label>正在连接本地节点</span>
+              </div>
+            </header>
+            <div class="advice-grid">
             <article class="surface advice-main">
               <div class="surface-head">
                 <div>
@@ -155,10 +179,10 @@
               </div>
               <div class="script-box">
                 <span>小智话术</span>
-                <strong id="aiScriptText">暂无，需要时点击智能分析。</strong>
+                <strong id="aiScriptText">暂无，需要时点击生成复盘建议。</strong>
                 <div class="script-actions">
                   <button class="primary-action" id="sendAiScriptButton" type="button" disabled>发送这句提醒</button>
-                  <small id="aiScriptHint">智能分析后可一键转为小智提醒。</small>
+                  <small id="aiScriptHint">AI 复盘后可一键转为小智提醒。</small>
                 </div>
               </div>
               <ul class="advisor-list" id="advisorBullets"></ul>
@@ -168,7 +192,7 @@
             <aside class="surface template-panel">
               <div class="surface-head compact">
                 <h2>快捷话术</h2>
-                <span id="aiCostLabel">手动触发</span>
+                <span id="aiCostLabel">手动生成</span>
               </div>
               <div class="template-list">
                 <button type="button" data-template="小智提醒你：把注意力放回书本上，我们再坚持十分钟。">鼓励型</button>
@@ -183,6 +207,7 @@
               <button class="primary-action full" id="sendMessageButton" type="button">发送给小智</button>
               <p class="control-result" id="controlResult">等待提醒指令。</p>
             </aside>
+            </div>
           </div>
         </section>
 
@@ -190,10 +215,14 @@
           <div class="review-board">
             <header class="review-command-bar">
               <div class="review-logo">
-                <span class="brand-mark"><svg><use href="#icon-brand"></use></svg></span>
+                <span class="brand-mark"><svg><use href="#icon-review"></use></svg></span>
                 <strong>Study Review</strong>
               </div>
-              <span class="review-chip">Live Session</span>
+              <div class="review-status">
+                <span class="review-chip" id="reviewStudentLabel" data-student-label>学生 A</span>
+                <span class="review-chip" id="reviewSessionTimer" data-session-timer>学习中 00:00</span>
+                <span class="review-chip" id="reviewConnectionLabel" data-connection-label>正在连接本地节点</span>
+              </div>
             </header>
           <div class="review-grid">
             <article class="surface review-header-panel">
@@ -201,11 +230,10 @@
                 <h2 id="reviewHeadline">本次学习节奏稳定</h2>
                 <p id="reviewSummary">过去一段时间的专注趋势、状态占比和需要关注的时段。</p>
               </div>
-              <div class="review-window-control" id="reviewRangeControl" aria-label="复盘时间范围">
-                <button class="active" type="button" data-range="5m">5 分钟</button>
-                <button type="button" data-range="15m">15 分钟</button>
-                <button type="button" data-range="30m">30 分钟</button>
-                <button type="button" data-range="session">本次</button>
+              <div class="review-window-control" id="reviewRangeControl" aria-label="学习回看时间范围">
+                <button class="active" type="button" data-range="45m">45min</button>
+                <button type="button" data-range="90m">90min</button>
+                <button type="button" data-range="120m">120min</button>
               </div>
             </article>
 
@@ -214,13 +242,14 @@
             <article class="surface review-heatmap-panel">
               <div class="surface-head compact">
                 <h2>状态热力墙</h2>
-                <span id="heatmapRangeLabel">近 5 分钟</span>
+                <span id="heatmapRangeLabel">45min</span>
               </div>
               <div class="review-heatmap" id="heatmap"></div>
               <div class="heatmap-scale">
                 <span>平稳</span>
                 <span>波动</span>
                 <span>离座</span>
+                <span>未检测</span>
               </div>
             </article>
 
@@ -228,7 +257,7 @@
               <div class="surface-head compact">
                 <div>
                   <h2>状态趋势</h2>
-                  <p id="trendRangeLabel">近 5 分钟趋势</p>
+                  <p id="trendRangeLabel">45min 趋势</p>
                 </div>
                 <span class="review-chip" id="reviewSampleLabel">等待数据</span>
               </div>
@@ -249,21 +278,31 @@
                 <h2>状态占比</h2>
                 <span id="reviewBalanceLabel">采样中</span>
               </div>
-              <div class="review-donut-wrap">
-                <div class="review-donut" id="reviewDonut"></div>
-                <div class="review-donut-center">
-                  <strong id="reviewFocusRatio">--%</strong>
-                  <span>专注占比</span>
+              <div class="review-distribution-body">
+                <div class="review-donut-wrap">
+                  <div class="review-donut" id="reviewDonut"></div>
                 </div>
+                <div class="review-breakdown" id="reviewBreakdown"></div>
               </div>
-              <div class="review-breakdown" id="reviewBreakdown"></div>
             </article>
           </div>
           </div>
         </section>
 
         <section class="view" id="view-device">
-          <div class="device-grid">
+          <div class="page-board">
+            <header class="page-command-bar">
+              <div class="page-logo">
+                <span class="brand-mark"><svg><use href="#icon-devices"></use></svg></span>
+                <strong>Devices</strong>
+              </div>
+              <div class="page-status">
+                <span class="review-chip" data-student-label>学生 A</span>
+                <span class="review-chip" data-session-timer>学习中 00:00</span>
+                <span class="review-chip" data-connection-label>正在连接本地节点</span>
+              </div>
+            </header>
+            <div class="device-grid">
             <article class="surface source-panel">
               <div class="surface-head">
                 <div>
@@ -289,31 +328,59 @@
                 <h2>联动与设置</h2>
                 <span>本机节点</span>
               </div>
-              <div class="setting-list">
-                <div>
-                  <span>小智 MCP</span>
-                  <strong>待接入</strong>
-                </div>
-                <div>
-                  <span>AI 分析</span>
-                  <strong>手动触发</strong>
-                </div>
-                <div>
-                  <span>离座阈值</span>
-                  <strong>15 分钟</strong>
-                </div>
-                <div>
-                  <span>隐私模式</span>
-                  <strong>未开启</strong>
-                </div>
-              </div>
-              <div class="reminder-grid">
-                <button data-command="voice_talk" type="button">语音对话</button>
-                <button data-command="remind_posture" type="button">姿态提醒</button>
-                <button data-command="remind_break" type="button">休息提醒</button>
-                <button data-command="refresh_stream" type="button">刷新视频</button>
-              </div>
+              <form class="settings-form" id="settingsForm">
+                <label>
+                  <span>小智 MCP 地址</span>
+                  <input id="xiaozhiMcpUrl" placeholder="http://127.0.0.1:3000/mcp" />
+                </label>
+                <label>
+                  <span>小智 MCP Token</span>
+                  <input id="xiaozhiMcpToken" type="password" placeholder="可选" />
+                </label>
+                <label>
+                  <span>AI 复盘建议</span>
+                  <select id="aiAnalysisMode">
+                    <option value="manual">手动生成</option>
+                    <option value="3">每 3 分钟自动复盘</option>
+                    <option value="5">每 5 分钟自动复盘</option>
+                    <option value="10">每 10 分钟自动复盘</option>
+                  </select>
+                </label>
+                <label>
+                  <span>离座阈值（分钟）</span>
+                  <input id="awayThresholdMinutes" type="number" min="1" max="120" step="1" value="15" />
+                </label>
+                <label>
+                  <span>处理模式</span>
+                  <select id="handlingMode">
+                    <option value="parent">家长亲自处理</option>
+                    <option value="managed">托管给小智</option>
+                  </select>
+                </label>
+                <label>
+                  <span>托管提醒频率</span>
+                  <select id="managedReminderInterval">
+                    <option value="3">至少间隔 3 分钟</option>
+                    <option value="5">至少间隔 5 分钟</option>
+                    <option value="10">至少间隔 10 分钟</option>
+                  </select>
+                </label>
+                <label>
+                  <span>低于此分数提醒</span>
+                  <input id="managedScoreThreshold" type="number" min="40" max="90" step="1" value="65" />
+                </label>
+                <label>
+                  <span>年龄段</span>
+                  <select id="ageMode">
+                    <option value="primary">小学：宽松</option>
+                    <option value="middle">初中：标准</option>
+                    <option value="high">高中：严格</option>
+                  </select>
+                </label>
+                <button class="primary-action full" type="submit">保存设置</button>
+              </form>
             </aside>
+            </div>
           </div>
         </section>
       </section>
@@ -322,3 +389,5 @@
     <script src="/static/parent-console-v2.js"></script>
   </body>
 </html>
+
+

@@ -1,4 +1,4 @@
-const STATUS_META = {
+﻿const STATUS_META = {
   flow: {
     label: "心流专注",
     decisionTitle: "当前无需打扰",
@@ -47,11 +47,29 @@ const STATUS_META = {
 };
 
 const METRIC_META = [
-  ["presence", "在座覆盖", "#3f7460"],
-  ["posture", "位姿匹配", "#d7904b"],
-  ["gaze", "面向一致", "#557fa3"],
-  ["stability", "动作稳定", "#c55d5d"],
+  ["presence", "在座覆盖", "#365E4C"],
+  ["posture", "位姿匹配", "#D48357"],
+  ["gaze", "面向一致", "#5B849F"],
+  ["stability", "动作稳定", "#C76963"],
 ];
+
+const UI_COLORS = {
+  primaryGreen: "#365E4C",
+  accentAmber: "#D48357",
+  neutralBlue: "#5B849F",
+  alertCoral: "#C76963",
+  darkGreen: "#4E876E",
+  darkMuted: "#4B514D",
+};
+
+const HEATMAP_STATUS_LABELS = {
+  empty: "\u672a\u68c0\u6d4b",
+  normal: "\u5e73\u7a33",
+  flow: "\u5e73\u7a33",
+  distracted: "\u6ce2\u52a8",
+  away: "\u79bb\u5ea7",
+  timeout_away: "\u79bb\u5ea7",
+};
 
 const STATUS_LABELS = {
   idle: "待命",
@@ -87,7 +105,7 @@ const state = {
   heatmap: new Array(24).fill("normal"),
   samples: [],
   reviewSamples: [],
-  reviewRange: "5m",
+  reviewRange: "45m",
   socket: null,
   socketConnected: false,
   socketReconnectTimer: null,
@@ -109,6 +127,28 @@ const state = {
   pendingDisplayStatus: "",
   pendingDisplayStartedAt: 0,
   lastEventAtByStatus: {},
+  lastReviewSampleAt: 0,
+  lastReviewSampleStatus: "",
+  lastReviewSampleScore: null,
+  lastTrendRenderKey: "",
+  settings: {
+    xiaozhiMcpUrl: "",
+    xiaozhiMcpToken: "",
+    aiAnalysisMode: "manual",
+    awayThresholdMinutes: 15,
+    handlingMode: "parent",
+    managedReminderInterval: 5,
+    managedScoreThreshold: 65,
+    ageMode: "middle",
+  },
+  aiAutoTimer: null,
+  lastManagedReminderAt: 0,
+};
+
+const AGE_MODE_CONFIG = {
+  primary: { label: "小学", scoreOffset: -5, intervalOffset: 1 },
+  middle: { label: "初中", scoreOffset: 0, intervalOffset: 0 },
+  high: { label: "高中", scoreOffset: 8, intervalOffset: -1 },
 };
 
 const VIDEO_REFRESH_SLOW_MS = 900;
@@ -135,7 +175,14 @@ const REVIEW_RANGES = {
   "30m": { label: "近 30 分钟", ms: 30 * 60 * 1000 },
   session: { label: "本次学习", ms: Infinity },
 };
+const REVIEW_RANGE_CONFIG = {
+  "45m": { label: "45min", ms: 45 * 60 * 1000, bucketMs: 3 * 60 * 1000 },
+  "90m": { label: "90min", ms: 90 * 60 * 1000, bucketMs: 5 * 60 * 1000 },
+  "120m": { label: "120min", ms: 120 * 60 * 1000, bucketMs: 6 * 60 * 1000 },
+};
 const REVIEW_HISTORY_LIMIT_MS = 4 * 60 * 60 * 1000;
+const REVIEW_SAMPLE_INTERVAL_MS = 30 * 1000;
+const SETTINGS_STORAGE_KEY = "parentConsoleV2Settings";
 
 const $ = (id) => document.getElementById(id);
 
@@ -161,6 +208,16 @@ function dateTime(timestamp) {
   if (!timestamp) return "";
   const date = new Date(timestamp);
   return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function timeRangeLabel(start, end) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const sameDay = startDate.toDateString() === endDate.toDateString();
+  const startTime = `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
+  const endTime = `${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
+  if (sameDay) return `${startTime}-${endTime}`;
+  return `${pad(startDate.getMonth() + 1)}/${pad(startDate.getDate())} ${startTime}-${pad(endDate.getMonth() + 1)}/${pad(endDate.getDate())} ${endTime}`;
 }
 
 function compactDuration(totalSeconds) {
@@ -317,16 +374,25 @@ function render(payload) {
     timestamp: safe.timestamp,
   });
   state.samples = state.samples.slice(-72);
-  state.reviewSamples.push({
-    status: safe.status,
-    score: safe.focusScore,
-    metrics: Object.assign({}, safe.metrics),
-    timestamp: Date.now(),
-  });
-  state.reviewSamples = state.reviewSamples.filter((item) => Date.now() - item.timestamp <= REVIEW_HISTORY_LIMIT_MS);
+  const now = Date.now();
+  const statusChanged = state.lastReviewSampleStatus && state.lastReviewSampleStatus !== safe.status;
+  const scoreChanged = state.lastReviewSampleScore !== null && Math.abs(state.lastReviewSampleScore - safe.focusScore) >= 12;
+  const intervalElapsed = now - state.lastReviewSampleAt >= REVIEW_SAMPLE_INTERVAL_MS;
+  if (!state.lastReviewSampleAt || intervalElapsed || statusChanged || scoreChanged) {
+    state.reviewSamples.push({
+      status: safe.status,
+      score: safe.focusScore,
+      metrics: Object.assign({}, safe.metrics),
+      timestamp: now,
+    });
+    state.lastReviewSampleAt = now;
+    state.lastReviewSampleStatus = safe.status;
+    state.lastReviewSampleScore = safe.focusScore;
+  }
+  state.reviewSamples = state.reviewSamples.filter((item) => now - item.timestamp <= REVIEW_HISTORY_LIMIT_MS);
   pushEvent(displayPayload);
 
-  $("studentLabel").textContent = safe.studentLabel;
+  setStudentLabel(safe.studentLabel);
   $("focusScore").textContent = safe.focusScore;
   $("frameScore").textContent = `专注度 ${safe.focusScore}`;
   $("frameStatus").textContent = meta.label;
@@ -337,7 +403,7 @@ function render(payload) {
   $("sourceLabel").textContent = safe.sourceLabel || safe.sourceId || "等待视频源";
   $("lastUpdateSummary").textContent = clock(safe.timestamp);
   $("engineMode").textContent = engineModeLabel(safe.engineMode);
-  $("connectionLabel").textContent = state.socketConnected ? "本地视觉节点已接入" : "本地画面稳定，状态通道重连中";
+  setConnectionLabel(state.socketConnected ? "本地视觉节点已接入" : "本地画面稳定，状态通道重连中");
   $("timeoutMask").classList.toggle("show", displayStatus === "timeout_away");
   $("awayCountdown").textContent = duration(safe.awaySeconds);
   if (safe.awaySeconds > 0) {
@@ -355,13 +421,16 @@ function render(payload) {
   renderAdvisor(meta);
   renderAnalytics();
   updateSessionTimer();
+  maybeRunManagedReminder(safe).catch(() => {
+    $("controlResult").textContent = "托管提醒发送失败，请检查小智 MCP 或本地服务状态。";
+  });
 }
 
 function renderCalibrationState(safe) {
   state.payload = safe;
   const remainingSeconds = Math.max(Math.ceil((state.calibrationEndsAt - Date.now()) / 1000), 0);
   const isWriting = state.calibrationPhase === "writing";
-  $("studentLabel").textContent = safe.studentLabel;
+  setStudentLabel(safe.studentLabel);
   $("focusScore").textContent = "--";
   $("frameScore").textContent = isWriting ? "写入校准" : "姿态校准中";
   $("frameStatus").textContent = isWriting ? "写入校准" : "姿态校准中";
@@ -374,7 +443,7 @@ function renderCalibrationState(safe) {
   $("sourceLabel").textContent = safe.sourceLabel || safe.sourceId || "当前视频源";
   $("lastUpdateSummary").textContent = isWriting ? "确认中" : `剩余 ${remainingSeconds}s`;
   $("engineMode").textContent = isWriting ? "写入校准" : "校准中";
-  $("connectionLabel").textContent = "正在记录当前设备的姿态基准";
+  setConnectionLabel("正在记录当前设备的姿态基准");
   $("timeoutMask").classList.remove("show");
   $("awayCountdown").textContent = duration(0);
   $("awayDuration").textContent = "校准中";
@@ -445,20 +514,38 @@ function countTransitions(items, matcher) {
 }
 
 function reviewRangeMeta() {
-  return REVIEW_RANGES[state.reviewRange] || REVIEW_RANGES["5m"];
+  return REVIEW_RANGE_CONFIG[state.reviewRange] || REVIEW_RANGE_CONFIG["45m"];
+}
+
+function fixedReviewWindow(meta, now = Date.now()) {
+  if (!Number.isFinite(meta.ms)) {
+    return { start: state.sessionStartedAt, end: now };
+  }
+  const bucketMs = meta.bucketMs || Math.max(meta.ms / Math.max(trendBucketCount(meta), 1), 60 * 1000);
+  const end = Math.ceil(now / bucketMs) * bucketMs;
+  return { start: end - meta.ms, end };
 }
 
 function reviewSamplesForRange() {
   const meta = reviewRangeMeta();
   if (!Number.isFinite(meta.ms)) return state.reviewSamples.slice();
-  const cutoff = Date.now() - meta.ms;
-  return state.reviewSamples.filter((item) => item.timestamp >= cutoff);
+  const window = fixedReviewWindow(meta);
+  return state.reviewSamples.filter((item) => item.timestamp >= window.start && item.timestamp <= window.end);
 }
 
 function sampleEvery(items, maxCount = 80) {
   if (items.length <= maxCount) return items;
   const step = Math.ceil(items.length / maxCount);
   return items.filter((_, index) => index % step === 0 || index === items.length - 1);
+}
+
+function minutesAgoLabel(timestamp, now = Date.now()) {
+  const deltaMinutes = Math.max(0, Math.round((now - timestamp) / 60000));
+  if (deltaMinutes < 1) return "现在";
+  if (deltaMinutes < 60) return `${deltaMinutes}分钟前`;
+  const hours = Math.floor(deltaMinutes / 60);
+  const minutes = deltaMinutes % 60;
+  return minutes ? `${hours}h${minutes}m前` : `${hours}h前`;
 }
 
 function average(items, getter) {
@@ -479,6 +566,43 @@ function reviewStats(samples) {
   const avgScore = average(samples, (item) => item.score);
   const avgPosture = average(samples, (item) => item.metrics?.posture);
   return { focusRatio, distractedRatio, awayRatio, distractedCount, awayCount, avgScore, avgPosture };
+}
+
+function buildReviewAiContext() {
+  const samples = reviewSamplesForRange();
+  const stats = reviewStats(samples);
+  const meta = reviewRangeMeta();
+  const trendBuckets = buildTrendBuckets(samples, meta).map((bucket) => ({
+    start: bucket.start,
+    end: bucket.end,
+    count: bucket.count,
+    score: bucket.score,
+    metrics: bucket.metrics,
+  }));
+  const heatmapHighlights = heatmapBuckets(samples)
+    .filter((bucket) => bucket.count && bucket.status !== "normal")
+    .slice(-16)
+    .map((bucket) => ({
+      timeLabel: bucket.timeLabel,
+      status: bucket.status,
+      count: bucket.count,
+      avgScore: bucket.avgScore,
+    }));
+  return {
+    range: { key: state.reviewRange, label: meta.label, ms: meta.ms },
+    sampleCount: samples.length,
+    stats,
+    trendBuckets,
+    heatmapHighlights,
+    recentEvents: state.events.slice(0, 8),
+    current: state.payload,
+    settings: {
+      handlingMode: state.settings.handlingMode,
+      ageMode: state.settings.ageMode,
+      managedScoreThreshold: effectiveManagedScoreThreshold(),
+      managedReminderInterval: effectiveManagedIntervalMinutes(),
+    },
+  };
 }
 
 function renderTimelineStats() {
@@ -514,27 +638,40 @@ function renderHeatmap() {
   const samples = reviewSamplesForRange();
   const buckets = heatmapBuckets(samples);
   $("heatmap").innerHTML = buckets
-    .map((bucket) => {
-      const status = bucket.status || "normal";
-      const alpha = bucket.count ? Math.max(0.24, Math.min(0.86, bucket.intensity)) : 0.12;
-      return `<span class="heatmap-cell tone-${status}" style="--heat-alpha:${alpha.toFixed(2)}" title="${bucket.title}"></span>`;
+    .map((bucket, index) => {
+      const status = bucket.count ? bucket.status || "normal" : "empty";
+      const alpha = bucket.count ? Math.max(0.24, Math.min(0.86, bucket.intensity)) : 0.08;
+      const label = HEATMAP_STATUS_LABELS[status] || HEATMAP_STATUS_LABELS.normal;
+      const timeLabel = bucket.timeLabel || (bucket.count ? bucket.title : "\u6682\u65e0\u91c7\u6837");
+      const score = bucket.count ? `\u5747\u5206 ${bucket.avgScore}` : "\u6682\u65e0\u5747\u5206";
+      const detail = `${timeLabel}\n\u72b6\u6001\uff1a${label}\n\u91c7\u6837\uff1a${bucket.count} \u4e2a\uff5c${score}`;
+      const column = Math.floor(index / 7);
+      const edgeClass = column >= 12 ? " tooltip-left" : column <= 2 ? " tooltip-right" : "";
+      return `<span class="heatmap-cell tone-${status}${edgeClass}" tabindex="0" style="--heat-alpha:${alpha.toFixed(2)}" data-tooltip="${escapeAttr(detail)}" aria-label="${escapeAttr(detail)}"></span>`;
     })
     .join("");
 }
 
-function heatmapBuckets(samples) {
-  const range = state.reviewRange;
-  const bucketCount = range === "5m" ? 70 : range === "15m" ? 84 : range === "30m" ? 98 : 112;
-  return bucketSamples(samples, bucketCount);
+function escapeAttr(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-function bucketSamples(samples, count) {
-  if (!samples.length) {
+function heatmapBuckets(samples) {
+  const meta = reviewRangeMeta();
+  return bucketSamples(samples, 112, meta.ms, fixedReviewWindow(meta));
+}
+
+function bucketSamples(samples, count, windowMs, fixedWindow = null) {
+  if (false && !samples.length) {
     return Array.from({ length: count }, () => ({ status: "normal", count: 0, intensity: 0.12, title: "暂无采样" }));
   }
-  const first = samples[0].timestamp;
-  const last = samples[samples.length - 1].timestamp;
-  const span = Math.max(last - first, 1);
+  const last = fixedWindow?.end ?? Date.now();
+  const first = fixedWindow?.start ?? (last - windowMs);
+  const span = windowMs;
   return Array.from({ length: count }, (_, bucketIndex) => {
     const start = first + (span / count) * bucketIndex;
     const end = first + (span / count) * (bucketIndex + 1);
@@ -555,33 +692,167 @@ function bucketSamples(samples, count) {
     return {
       status,
       count: bucketItems.length,
+      avgScore: Math.round(avgScore),
       intensity,
+      timeLabel: `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}-${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`,
       title: `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}-${pad(endDate.getHours())}:${pad(endDate.getMinutes())} · ${bucketItems.length} 个采样`,
     };
   });
 }
 
-function pointsFor(items, getter, width = 300, height = 82) {
-  const count = Math.max(items.length - 1, 1);
-  return items
-    .map((item, index) => {
-      const x = (index / count) * width;
-      const y = height - (clamp(getter(item)) / 100) * height;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
+function trendWindowForRange(samples, meta) {
+  const now = Date.now();
+  if (Number.isFinite(meta.ms)) {
+    const bucketMs = meta.bucketMs || Math.max(meta.ms / Math.max(trendBucketCount(meta), 1), 60 * 1000);
+    const end = Math.ceil(now / bucketMs) * bucketMs;
+    return { start: end - meta.ms, end };
+  }
+  if (!samples.length) {
+    return { start: state.sessionStartedAt, end: now };
+  }
+  const firstSampleAt = samples.reduce((min, item) => Math.min(min, item.timestamp), samples[0].timestamp);
+  const start = Math.min(state.sessionStartedAt, firstSampleAt);
+  return { start, end: Math.max(now, start + 60 * 1000) };
+}
+
+function trendBucketCount(meta) {
+  if (!Number.isFinite(meta.ms)) return 18;
+  if (meta.bucketMs) return Math.max(1, Math.round(meta.ms / meta.bucketMs));
+  return 18;
+}
+
+function buildTrendBuckets(samples, meta) {
+  const window = trendWindowForRange(samples, meta);
+  const count = trendBucketCount(meta);
+  const span = Math.max(window.end - window.start, 1000);
+  return Array.from({ length: count }, (_, index) => {
+    const start = window.start + (span / count) * index;
+    const end = window.start + (span / count) * (index + 1);
+    const bucketItems = samples.filter((item) => item.timestamp >= start && (index === count - 1 ? item.timestamp <= end : item.timestamp < end));
+    const score = bucketItems.length
+      ? Math.round(bucketItems.reduce((sum, item) => sum + clamp(item.score), 0) / bucketItems.length)
+      : null;
+    const metrics = bucketItems.length
+      ? {
+          gaze: Math.round(bucketItems.reduce((sum, item) => sum + clamp(item.metrics?.gaze), 0) / bucketItems.length),
+          posture: Math.round(bucketItems.reduce((sum, item) => sum + clamp(item.metrics?.posture), 0) / bucketItems.length),
+          stability: Math.round(bucketItems.reduce((sum, item) => sum + clamp(item.metrics?.stability), 0) / bucketItems.length),
+          presence: Math.round(bucketItems.reduce((sum, item) => sum + clamp(item.metrics?.presence), 0) / bucketItems.length),
+        }
+      : null;
+    return { start, end, count: bucketItems.length, score, metrics };
+  });
+}
+
+function smoothTrendValues(buckets, getter = (bucket) => bucket.score) {
+  const values = buckets.map((bucket) => {
+    const value = getter(bucket);
+    return value === null || value === undefined ? null : clamp(value);
+  });
+  return values.map((value, index) => {
+    if (value === null || value === undefined) return null;
+    let weightedSum = 0;
+    let weightTotal = 0;
+    [-2, -1, 0, 1, 2].forEach((offset) => {
+      const nearby = values[index + offset];
+      if (nearby === null || nearby === undefined) return;
+      const weight = offset === 0 ? 4 : Math.abs(offset) === 1 ? 2 : 1;
+      weightedSum += nearby * weight;
+      weightTotal += weight;
+    });
+    return Math.round(weightedSum / Math.max(weightTotal, 1));
+  });
+}
+
+function trendPathForBuckets(buckets, chart, getter = (bucket) => bucket.score) {
+  const span = Math.max(chart.end - chart.start, 1000);
+  const smoothed = smoothTrendValues(buckets, getter);
+  let hasOpenSegment = false;
+  return buckets
+    .map((bucket, index) => {
+      const value = smoothed[index];
+      if (!bucket.count || value === null || value === undefined) {
+        hasOpenSegment = false;
+        return "";
+      }
+      const center = (bucket.start + bucket.end) / 2;
+      const x = chart.left + ((center - chart.start) / span) * chart.width;
+      const y = chart.top + (1 - clamp(value) / 100) * chart.height;
+      const command = hasOpenSegment ? "L" : "M";
+      hasOpenSegment = true;
+      return `${command}${x.toFixed(1)} ${y.toFixed(1)}`;
     })
+    .filter(Boolean)
     .join(" ");
+}
+
+function renderTrendTooltipContent(data) {
+  const rows = [
+    ["专注分", data.score],
+    ["面向一致", data.gaze],
+    ["位姿匹配", data.posture],
+    ["动作稳定", data.stability],
+    ["在座状态", data.presence],
+  ];
+  return `
+    <strong>${data.time || "当前采样段"}</strong>
+    <div>
+      ${rows
+        .map(([label, value]) => `<span>${label}</span><b>${value === "--" ? "--" : `${value}`}</b>`)
+        .join("")}
+    </div>
+  `;
+}
+
+function bindTrendTooltips() {
+  const chart = $("trendChart");
+  const tooltip = $("trendTooltip");
+  if (!chart || !tooltip) return;
+
+  const show = (target, event) => {
+    if (!target?.dataset?.tooltip) return;
+    let data = null;
+    try {
+      data = JSON.parse(target.dataset.tooltip);
+    } catch {
+      return;
+    }
+    tooltip.innerHTML = renderTrendTooltipContent(data);
+    tooltip.classList.add("show");
+    const targetRect = target.getBoundingClientRect();
+    const pointer = typeof event?.clientX === "number"
+      ? event
+      : { clientX: targetRect.left + targetRect.width / 2, clientY: targetRect.top + targetRect.height / 2 };
+    move(pointer);
+  };
+  const move = (event) => {
+    const rect = chart.getBoundingClientRect();
+    const x = Math.max(12, Math.min(event.clientX - rect.left + 14, rect.width - 176));
+    const y = Math.max(12, Math.min(event.clientY - rect.top - 26, rect.height - 132));
+    tooltip.style.transform = `translate(${x}px, ${y}px)`;
+  };
+  const hide = () => {
+    tooltip.classList.remove("show");
+  };
+
+  chart.querySelectorAll(".chart-score-bar").forEach((bar) => {
+    bar.addEventListener("mouseenter", (event) => show(bar, event));
+    bar.addEventListener("mousemove", move);
+    bar.addEventListener("mouseleave", hide);
+    bar.addEventListener("focus", (event) => show(bar, event));
+    bar.addEventListener("blur", hide);
+  });
 }
 
 function renderReviewDistribution(samples) {
   const stats = reviewStats(samples);
   if (!samples.length) {
-    $("reviewDonut").style.background = "linear-gradient(90deg, rgba(100, 173, 133, 0.28) 0% 100%)";
-    $("reviewFocusRatio").textContent = "--%";
+    $("reviewDonut").style.background = "linear-gradient(90deg, rgba(78, 135, 110, 0.28) 0% 100%)";
     $("reviewBalanceLabel").textContent = "等待采样";
     $("reviewBreakdown").innerHTML = ["专注", "波动", "离座"].map((label) => `
       <div class="review-breakdown-row">
         <span>${label}</span>
-        <div class="review-breakdown-track"><i class="review-breakdown-fill" style="width:0%;background:#b9c9bf"></i></div>
+        <div class="review-breakdown-track"><i class="review-breakdown-fill" style="width:0%;background:${UI_COLORS.darkMuted}"></i></div>
         <strong>--</strong>
       </div>
     `).join("");
@@ -589,13 +860,12 @@ function renderReviewDistribution(samples) {
   }
   const focusedStop = stats.focusRatio;
   const distractedStop = focusedStop + stats.distractedRatio;
-  $("reviewDonut").style.background = `linear-gradient(90deg, #64ad85 0% ${focusedStop}%, #d7904b ${focusedStop}% ${distractedStop}%, #c55d5d ${distractedStop}% 100%)`;
-  $("reviewFocusRatio").textContent = `${stats.focusRatio}%`;
+  $("reviewDonut").style.background = `linear-gradient(90deg, ${UI_COLORS.darkGreen} 0% ${focusedStop}%, ${UI_COLORS.accentAmber} ${focusedStop}% ${distractedStop}%, ${UI_COLORS.alertCoral} ${distractedStop}% 100%)`;
   $("reviewBalanceLabel").textContent = samples.length ? `${samples.length} 个采样点` : "等待采样";
   const rows = [
-    ["专注", stats.focusRatio, "#64ad85"],
-    ["波动", stats.distractedRatio, "#d7904b"],
-    ["离座", stats.awayRatio, "#c55d5d"],
+    ["专注", stats.focusRatio, UI_COLORS.darkGreen],
+    ["波动", stats.distractedRatio, UI_COLORS.accentAmber],
+    ["离座", stats.awayRatio, UI_COLORS.alertCoral],
   ];
   $("reviewBreakdown").innerHTML = rows.map(([label, value, color]) => `
     <div class="review-breakdown-row">
@@ -612,14 +882,14 @@ function renderReviewInsight(samples) {
   const stats = reviewStats(samples);
   let tone = "观察";
   let title = "保持当前节奏";
-  let copy = "这段时间整体比较平稳，家长可以少打断，多关注任务是否按计划推进。";
+  let copy = "整体比较平稳，少打断，关注任务是否按计划推进。";
   if (!samples.length) {
-    title = "等待复盘数据";
+    title = "等待学习数据";
     copy = "开始学习后，这里会沉淀更长时间的状态趋势。";
   } else if (stats.awayCount > 0) {
     tone = "关注离座";
     title = "留意离座发生的时段";
-    copy = "如果离座集中出现在同一类任务后，可以考虑调整休息节奏或任务切分。";
+    copy = "如果离座集中出现在同一类任务后，考虑调整休息节奏或任务切分。";
   } else if (stats.distractedCount >= 2 || stats.focusRatio < 60) {
     tone = "轻度关注";
     title = "波动比平时更明显";
@@ -643,14 +913,10 @@ function renderReviewInsight(samples) {
 
 function renderAnalytics() {
   const rangeSamples = reviewSamplesForRange();
-  const samples = rangeSamples.length ? rangeSamples : [{ score: 82, status: "normal", metrics: {}, timestamp: Date.now() }];
-  const recent = sampleEvery(samples, 84);
   const rangeMeta = reviewRangeMeta();
   const trendItems = [
-    { key: "score", label: "专注分", color: "#285242", getter: (item) => item.score },
-    { key: "gaze", label: "视线", color: "#64ad85", getter: (item) => item.metrics?.gaze },
-    { key: "posture", label: "坐姿", color: "#d7904b", getter: (item) => item.metrics?.posture },
-    { key: "stability", label: "稳定", color: "#557fa3", getter: (item) => item.metrics?.stability },
+    { key: "bar", label: "分数柱", color: "rgba(237, 244, 239, 0.18)" },
+    { key: "line", label: "稳定趋势", color: UI_COLORS.darkGreen },
   ];
 
   $("trendLegend").innerHTML = trendItems
@@ -660,29 +926,121 @@ function renderAnalytics() {
   $("heatmapRangeLabel").textContent = rangeMeta.label;
   $("reviewSampleLabel").textContent = rangeSamples.length ? `${rangeSamples.length} 个采样点` : "等待数据";
 
+  const latestSample = rangeSamples[rangeSamples.length - 1];
+  const trendRenderKey = [
+    state.reviewRange,
+    rangeSamples.length,
+    latestSample?.timestamp || 0,
+    latestSample?.score || 0,
+    latestSample?.metrics?.stability || 0,
+    Math.floor(Date.now() / 60000),
+  ].join(":");
+  if (state.lastTrendRenderKey === trendRenderKey && $("trendChart").querySelector("svg")) {
+    renderReviewDistribution(rangeSamples);
+    renderReviewInsight(rangeSamples);
+    return;
+  }
+  state.lastTrendRenderKey = trendRenderKey;
+
+  const chart = { left: 26, top: 14, width: 486, height: 358 };
+  const buckets = buildTrendBuckets(rangeSamples, rangeMeta);
+  chart.start = buckets[0]?.start || Date.now();
+  chart.end = buckets[buckets.length - 1]?.end || Date.now();
+  const span = Math.max(chart.end - chart.start, 1000);
+  const now = Date.now();
   const gridLines = [0, 25, 50, 75, 100]
-    .map((value) => `<line x1="0" y1="${82 - value * 0.82}" x2="300" y2="${82 - value * 0.82}" />`)
+    .map((value) => {
+      const y = chart.top + (1 - value / 100) * chart.height;
+      return `
+        <line class="chart-grid-line" x1="${chart.left}" y1="${y.toFixed(1)}" x2="${chart.left + chart.width}" y2="${y.toFixed(1)}" />
+        <text class="chart-y-label" x="${chart.left - 7}" y="${(y + 4).toFixed(1)}">${value}</text>
+      `;
+    })
     .join("");
-  const lines = trendItems
-    .map(
-      (item) => `
-        <polyline
-          points="${pointsFor(recent, item.getter)}"
-          fill="none"
-          stroke="${item.color}"
-          stroke-width="${item.key === "score" ? 3 : 2}"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      `
-    )
+  const tickFractions = [0, 0.25, 0.5, 0.75, 1];
+  const tickLabels = tickFractions
+    .map((fraction) => {
+      const x = chart.left + chart.width * fraction;
+      const tickAt = chart.start + span * fraction;
+      return `
+        <line class="chart-tick" x1="${x.toFixed(1)}" y1="${chart.top + chart.height}" x2="${x.toFixed(1)}" y2="${chart.top + chart.height + 4}" />
+        <text class="chart-x-label" x="${x.toFixed(1)}" y="${chart.top + chart.height + 28}">${minutesAgoLabel(tickAt, now)}</text>
+      `;
+    })
     .join("");
+  const maxBarWidth = 18;
+  const barWidth = Math.min(maxBarWidth, Math.max(9, (chart.width / buckets.length) * 0.42));
+  const scoreBars = buckets
+    .map((bucket) => {
+      if (!bucket.count || bucket.score === null || bucket.score === undefined) return "";
+      const center = (bucket.start + bucket.end) / 2;
+      const x = chart.left + ((center - chart.start) / span) * chart.width;
+      const score = clamp(bucket.score);
+      const y = chart.top + (1 - score / 100) * chart.height;
+      const height = chart.top + chart.height - y;
+      const isRecent = bucket.end >= now - Math.max(rangeMeta.ms / buckets.length, 60 * 1000);
+      const detail = {
+        time: `${timeRangeLabel(bucket.start, bucket.end)} · ${bucket.count} 个采样`,
+        score,
+        gaze: bucket.metrics?.gaze ?? "--",
+        posture: bucket.metrics?.posture ?? "--",
+        stability: bucket.metrics?.stability ?? "--",
+        presence: bucket.metrics?.presence ?? "--",
+      };
+      return `
+        <rect
+          class="chart-score-bar${isRecent ? " is-recent" : ""}"
+          x="${(x - barWidth / 2).toFixed(1)}"
+          y="${y.toFixed(1)}"
+          width="${barWidth.toFixed(1)}"
+          height="${Math.max(height, 2).toFixed(1)}"
+          rx="${(barWidth / 2).toFixed(1)}"
+          tabindex="0"
+          data-tooltip="${escapeAttr(JSON.stringify(detail))}"
+        ></rect>
+      `;
+    })
+    .join("");
+  const stabilityGetter = (bucket) => bucket.metrics?.stability;
+  const smoothed = smoothTrendValues(buckets, stabilityGetter);
+  const trendPath = trendPathForBuckets(buckets, chart, stabilityGetter);
+  const trendArea = trendPath
+    ? `${trendPath} L ${chart.left + chart.width} ${chart.top + chart.height} L ${chart.left} ${chart.top + chart.height} Z`
+    : "";
+  const dots = buckets
+    .map((bucket, index) => {
+      const value = smoothed[index];
+      if (!bucket.count || value === null || value === undefined) return "";
+      const x = chart.left + ((((bucket.start + bucket.end) / 2) - chart.start) / span) * chart.width;
+      const y = chart.top + (1 - clamp(value) / 100) * chart.height;
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.2" />`;
+    })
+    .join("");
+  const emptyState = rangeSamples.length
+    ? ""
+    : `<g class="chart-empty">
+        <text x="241" y="144">等待该时间窗内的采样</text>
+        <text x="241" y="164">曲线会按真实时间落点生成</text>
+      </g>`;
   $("trendChart").innerHTML = `
-    <svg viewBox="0 0 300 96" preserveAspectRatio="none" aria-label="指标趋势图">
+    <svg viewBox="0 0 528 430" preserveAspectRatio="none" aria-label="指标趋势图">
+      <defs>
+        <clipPath id="trendPlotClip"><rect x="${chart.left}" y="${chart.top}" width="${chart.width}" height="${chart.height}" rx="6" /></clipPath>
+      </defs>
+      <rect class="chart-plot-bg" x="${chart.left}" y="${chart.top}" width="${chart.width}" height="${chart.height}" rx="6" />
       <g class="chart-grid">${gridLines}</g>
-      <g transform="translate(0 7)">${lines}</g>
+      <g class="chart-axis">${tickLabels}</g>
+      <g class="chart-bars" clip-path="url(#trendPlotClip)">${scoreBars}</g>
+      <g class="chart-lines" clip-path="url(#trendPlotClip)">
+        ${trendArea ? `<path class="chart-trend-area" d="${trendArea}" />` : ""}
+        <path class="chart-trend-line" d="${trendPath}" />
+        <g class="chart-dots">${dots}</g>
+      </g>
+      ${emptyState}
     </svg>
+    <div class="trend-tooltip" id="trendTooltip" role="status"></div>
   `;
+  bindTrendTooltips();
   renderReviewDistribution(rangeSamples);
   renderReviewInsight(rangeSamples);
 }
@@ -695,10 +1053,10 @@ function renderAdvisor(meta) {
     $("advisorTitle").textContent = meta.advisorTitle;
     $("advisorSummary").textContent = meta.advisorSummary;
     $("advisorBullets").innerHTML = meta.bullets.map((item) => `<li>${item}</li>`).join("");
-    $("aiScriptText").textContent = "暂无，需要时点击智能分析。";
+    $("aiScriptText").textContent = "暂无，需要时点击生成复盘建议。";
     $("aiDetailGrid").innerHTML = "";
     sendButton.disabled = true;
-    scriptHint.textContent = "智能分析后可一键转为小智提醒。";
+    scriptHint.textContent = "AI 复盘后可一键转为小智提醒。";
     return;
   }
 
@@ -712,12 +1070,12 @@ function renderAdvisor(meta) {
   scriptHint.textContent = script.trim() ? "确认后可发送给小智朗读。" : "本次建议观察，不主动提醒。";
 
   const details = [
-    ["判断依据", advice.reason || "根据当前专注度、视线、坐姿和在座状态综合判断。"],
+    ["复盘依据", advice.reason || "基于近期状态占比、趋势桶、热力墙和事件记录生成。"],
     ["是否提醒", advice.shouldRemind ? "建议提醒" : "暂不提醒"],
     ["提醒等级", advice.reminderLevel || "observe"],
   ];
   if (Array.isArray(advice.observations) && advice.observations.length) {
-    details.push(["指标观察", advice.observations.join("；")]);
+    details.push(["时域观察", advice.observations.join("；")]);
   }
   if (Array.isArray(advice.actionPlan) && advice.actionPlan.length) {
     details.push(["行动建议", advice.actionPlan.join("；")]);
@@ -729,7 +1087,25 @@ function renderAdvisor(meta) {
 
 function updateSessionTimer() {
   const elapsed = Math.floor((Date.now() - state.sessionStartedAt) / 1000);
-  $("sessionTimer").textContent = `学习中 ${compactDuration(elapsed)}`;
+  const label = `学习中 ${compactDuration(elapsed)}`;
+  $("sessionTimer").textContent = label;
+  document.querySelectorAll("[data-session-timer]").forEach((element) => {
+    element.textContent = label;
+  });
+}
+
+function setStudentLabel(label) {
+  $("studentLabel").textContent = label;
+  document.querySelectorAll("[data-student-label]").forEach((element) => {
+    element.textContent = label;
+  });
+}
+
+function setConnectionLabel(label) {
+  $("connectionLabel").textContent = label;
+  document.querySelectorAll("[data-connection-label]").forEach((element) => {
+    element.textContent = label;
+  });
 }
 
 function setVideoState(mode, message = "") {
@@ -843,10 +1219,11 @@ function switchView(viewName) {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.remove("active"));
   $(`view-${viewName}`).classList.add("active");
   document.querySelector(`[data-view="${viewName}"]`).classList.add("active");
+  document.querySelector(".workspace").classList.toggle("is-review-mode", viewName === "review");
   const titles = {
     watch: "看护",
     advice: "建议",
-    review: "复盘",
+    review: "Study Review",
     device: "设备",
   };
   $("pageTitle").textContent = titles[viewName] || "看护";
@@ -856,7 +1233,7 @@ async function sendAiScript() {
   const advice = state.aiAdvice || {};
   const script = (advice.xiaozhiScript || advice.message || $("aiScriptText").textContent || "").trim();
   if (!script || script === "本次不建议让小智主动打断。" || script.startsWith("暂无")) {
-    $("controlResult").textContent = "当前没有可发送的小智话术，请先点击智能分析。";
+    $("controlResult").textContent = "当前没有可发送的小智话术，请先生成复盘建议。";
     switchView("advice");
     return;
   }
@@ -874,27 +1251,27 @@ function connectSocket() {
   }
   window.clearTimeout(state.socketReconnectTimer);
   state.socket = new WebSocket(wsUrl());
-  $("connectionLabel").textContent = "正在连接本地节点";
+  setConnectionLabel("正在连接本地节点");
 
   state.socket.onopen = () => {
     state.socketConnected = true;
-    $("connectionLabel").textContent = "本地视觉节点已接入";
+    setConnectionLabel("本地视觉节点已接入");
   };
 
   state.socket.onmessage = (event) => {
     try {
       render(JSON.parse(event.data));
     } catch (error) {
-      $("connectionLabel").textContent = "状态数据解析失败";
+      setConnectionLabel("状态数据解析失败");
     }
   };
 
   state.socket.onclose = () => {
     state.socketConnected = false;
     if (state.payload) {
-      $("connectionLabel").textContent = "本地画面稳定，状态通道重连中";
+      setConnectionLabel("本地画面稳定，状态通道重连中");
     } else {
-      $("connectionLabel").textContent = "本地连接已断开";
+      setConnectionLabel("本地连接已断开");
     }
     state.socketReconnectTimer = window.setTimeout(connectSocket, 1500);
   };
@@ -902,9 +1279,9 @@ function connectSocket() {
   state.socket.onerror = () => {
     state.socketConnected = false;
     if (state.payload) {
-      $("connectionLabel").textContent = "本地画面稳定，状态通道重连中";
+      setConnectionLabel("本地画面稳定，状态通道重连中");
     } else {
-      $("connectionLabel").textContent = "等待本地服务启动";
+      setConnectionLabel("等待本地服务启动");
     }
   };
 }
@@ -920,6 +1297,149 @@ async function fetchJson(path, options) {
     throw error;
   }
   return data;
+}
+
+function effectiveManagedScoreThreshold() {
+  const age = AGE_MODE_CONFIG[state.settings.ageMode] || AGE_MODE_CONFIG.middle;
+  return Math.max(40, Math.min(95, Number(state.settings.managedScoreThreshold || 65) + age.scoreOffset));
+}
+
+function effectiveManagedIntervalMinutes() {
+  const age = AGE_MODE_CONFIG[state.settings.ageMode] || AGE_MODE_CONFIG.middle;
+  return Math.max(1, Number(state.settings.managedReminderInterval || 5) + age.intervalOffset);
+}
+
+function readSettingsForm() {
+  return {
+    xiaozhiMcpUrl: $("xiaozhiMcpUrl").value.trim(),
+    xiaozhiMcpToken: $("xiaozhiMcpToken").value.trim(),
+    aiAnalysisMode: $("aiAnalysisMode").value,
+    awayThresholdMinutes: Math.max(1, Math.min(120, Number($("awayThresholdMinutes").value || 15))),
+    handlingMode: $("handlingMode").value,
+    managedReminderInterval: Math.max(1, Number($("managedReminderInterval").value || 5)),
+    managedScoreThreshold: Math.max(40, Math.min(90, Number($("managedScoreThreshold").value || 65))),
+    ageMode: $("ageMode").value,
+  };
+}
+
+function writeSettingsForm() {
+  $("xiaozhiMcpUrl").value = state.settings.xiaozhiMcpUrl || "";
+  $("xiaozhiMcpToken").value = state.settings.xiaozhiMcpToken || "";
+  $("aiAnalysisMode").value = state.settings.aiAnalysisMode || "manual";
+  $("awayThresholdMinutes").value = state.settings.awayThresholdMinutes || 15;
+  $("handlingMode").value = state.settings.handlingMode || "parent";
+  $("managedReminderInterval").value = state.settings.managedReminderInterval || 5;
+  $("managedScoreThreshold").value = state.settings.managedScoreThreshold || 65;
+  $("ageMode").value = state.settings.ageMode || "middle";
+}
+
+function saveLocalSettings() {
+  try {
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      aiAnalysisMode: state.settings.aiAnalysisMode,
+      handlingMode: state.settings.handlingMode,
+      managedReminderInterval: state.settings.managedReminderInterval,
+      managedScoreThreshold: state.settings.managedScoreThreshold,
+    }));
+  } catch (error) {
+    // Local persistence is best effort only.
+  }
+}
+
+function loadLocalSettings() {
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    state.settings = Object.assign({}, state.settings, JSON.parse(raw));
+  } catch (error) {
+    // Ignore malformed local settings.
+  }
+}
+
+function applyAiAnalysisSchedule() {
+  window.clearInterval(state.aiAutoTimer);
+  state.aiAutoTimer = null;
+  const mode = state.settings.aiAnalysisMode;
+  if (mode === "manual") {
+    $("aiCostLabel").textContent = "手动生成";
+    return;
+  }
+  const minutes = Math.max(1, Number(mode || 5));
+  $("aiCostLabel").textContent = `每 ${minutes} 分钟复盘`;
+  state.aiAutoTimer = window.setInterval(() => {
+    refreshAiAdvice({ force: false, switchToAdvice: false, silent: true });
+  }, minutes * 60 * 1000);
+}
+
+async function loadSettings() {
+  try {
+    const remote = await fetchJson("/settings");
+    state.settings = Object.assign({}, state.settings, {
+      xiaozhiMcpUrl: remote.xiaozhiMcpUrl || "",
+      xiaozhiMcpToken: remote.xiaozhiMcpToken || "",
+      awayThresholdMinutes: Number(remote.awayTimeoutMinutes || state.settings.awayThresholdMinutes),
+      ageMode: remote.ageMode || state.settings.ageMode,
+    });
+  } catch (error) {
+    // Keep local defaults while the backend is starting.
+  }
+  writeSettingsForm();
+  applyAiAnalysisSchedule();
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  state.settings = Object.assign({}, state.settings, readSettingsForm());
+  saveLocalSettings();
+  writeSettingsForm();
+  applyAiAnalysisSchedule();
+  const payload = {
+    awayTimeoutMinutes: state.settings.awayThresholdMinutes,
+    xiaozhiMcpUrl: state.settings.xiaozhiMcpUrl,
+    xiaozhiMcpToken: state.settings.xiaozhiMcpToken,
+    ageMode: state.settings.ageMode,
+  };
+  const saved = await fetchJson("/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  state.settings.awayThresholdMinutes = Number(saved.awayTimeoutMinutes || state.settings.awayThresholdMinutes);
+  writeSettingsForm();
+  const age = AGE_MODE_CONFIG[state.settings.ageMode] || AGE_MODE_CONFIG.middle;
+  $("controlResult").textContent =
+    `设置已保存：${age.label}模式，托管阈值 ${effectiveManagedScoreThreshold()} 分，提醒间隔 ${effectiveManagedIntervalMinutes()} 分钟。`;
+}
+
+function shouldManagedReminder(payload) {
+  if (state.settings.handlingMode !== "managed") return false;
+  if (!payload) return false;
+  const now = Date.now();
+  const cooldownMs = effectiveManagedIntervalMinutes() * 60 * 1000;
+  if (now - state.lastManagedReminderAt < cooldownMs) return false;
+  if (payload.status === "timeout_away") return true;
+  return payload.focusScore < effectiveManagedScoreThreshold();
+}
+
+function fallbackManagedScript(payload) {
+  if (payload.status === "timeout_away") {
+    return "小智提醒你：休息好了就回到座位上，我们继续完成这一小段哦！";
+  }
+  if (payload.metrics?.posture < 55) {
+    return "小智提醒你：坐直一点，眼睛和书本保持舒服的距离。";
+  }
+  return "小智提醒你：把注意力放回当前任务上，我们再坚持一小段。";
+}
+
+async function maybeRunManagedReminder(payload) {
+  if (!shouldManagedReminder(payload)) return;
+  state.lastManagedReminderAt = Date.now();
+  const advice = state.aiAdvice || await refreshAiAdvice({ force: false, switchToAdvice: false, silent: true });
+  const script = (advice?.xiaozhiScript || advice?.message || fallbackManagedScript(payload)).trim();
+  if (!script) return;
+  await sendControl("managed_ai_reminder", script, { silent: true });
+  $("controlResult").textContent =
+    `托管提醒已触发：${script}${state.settings.xiaozhiMcpUrl ? "" : "（小智 MCP 地址尚未接入，当前仅记录指令）"}`;
 }
 
 function renderSourceList(items = []) {
@@ -1022,31 +1542,46 @@ async function waitForCalibrationSource(sourceId, startedAt) {
   return null;
 }
 
-async function refreshAiAdvice() {
+async function refreshAiAdvice(options = {}) {
+  const force = options.force !== false;
+  const switchToAdviceView = options.switchToAdvice !== false;
+  const silent = Boolean(options.silent);
   try {
-    $("manualAiButton").disabled = true;
-    $("manualAiButton").textContent = "分析中";
-    const data = await fetchJson("/ai/advice?force=true");
+    if (!silent) {
+      $("manualAiButton").disabled = true;
+      $("manualAiButton").textContent = "复盘中";
+    }
+    const data = await fetchJson(`/ai/review?force=${force ? "true" : "false"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: buildReviewAiContext() }),
+    });
     state.aiAdvice = data.advice;
     const seconds = Number(data.nextRefreshSeconds || data.minIntervalSeconds || 120);
-    $("aiCostLabel").textContent = data.cached ? `缓存 ${seconds}s` : "已更新";
+    if (state.settings.aiAnalysisMode === "manual") {
+      $("aiCostLabel").textContent = data.cached ? `缓存 ${seconds}s` : "已更新";
+    }
     if (state.payload) {
       render(state.payload);
     }
-    switchView("advice");
+    if (switchToAdviceView) switchView("advice");
+    return state.aiAdvice;
   } catch (error) {
     state.aiAdvice = {
-      title: "AI 建议暂不可用",
-      summary: "DeepSeek 接口暂时没有返回，页面继续使用本地规则建议。",
+      title: "AI 复盘建议暂不可用",
+      summary: "DeepSeek 接口暂时没有返回，页面继续使用本地复盘规则建议。",
       bullets: ["不会影响视频分析。", "后端会继续按两分钟节流。"],
     };
     if (state.payload) {
       render(state.payload);
     }
-    switchView("advice");
+    if (switchToAdviceView) switchView("advice");
+    return state.aiAdvice;
   } finally {
-    $("manualAiButton").disabled = false;
-    $("manualAiButton").textContent = "智能分析";
+    if (!silent) {
+      $("manualAiButton").disabled = false;
+      $("manualAiButton").textContent = "生成复盘建议";
+    }
   }
 }
 
@@ -1220,13 +1755,16 @@ function bindEvents() {
   });
   document.querySelectorAll("[data-template]").forEach((button) => {
     button.addEventListener("click", () => {
+      document.querySelectorAll("[data-template]").forEach((item) => {
+        item.classList.toggle("is-active", item === button);
+      });
       $("parentMessage").value = button.dataset.template;
       switchView("advice");
     });
   });
   document.querySelectorAll("[data-range]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.reviewRange = button.dataset.range || "5m";
+      state.reviewRange = button.dataset.range || "45m";
       document.querySelectorAll("[data-range]").forEach((item) => {
         item.classList.toggle("active", item === button);
       });
@@ -1237,12 +1775,17 @@ function bindEvents() {
   });
 
   $("sourceForm").addEventListener("submit", addNetworkSource);
+  $("settingsForm").addEventListener("submit", saveSettings);
   $("refreshSourcesButton").addEventListener("click", refreshSources);
   $("sendMessageButton").addEventListener("click", () => {
     const text = $("parentMessage").value.trim();
-    sendControl(text ? "parent_message" : "voice_talk", text);
+    if (!text) {
+      $("controlResult").textContent = "请先填写要发送给小智的提醒话术，或点击生成复盘建议。";
+      return;
+    }
+    sendControl("parent_message", text);
   });
-  $("manualAiButton").addEventListener("click", refreshAiAdvice);
+  $("manualAiButton").addEventListener("click", () => refreshAiAdvice({ force: true, switchToAdvice: true }));
   $("calibrationButton").addEventListener("click", startPostureCalibration);
   $("sendAiScriptButton").addEventListener("click", sendAiScript);
   $("primaryDecisionButton").addEventListener("click", () => {
@@ -1265,8 +1808,13 @@ function init() {
   setVideoState("loading", "正在连接视频源");
   $("sourceName").value = "IP Webcam 手机摄像头";
   $("sourceUrl").value = "http://192.168.137.71:8080/video";
+  loadLocalSettings();
+  writeSettingsForm();
   bindEvents();
   render({});
+  loadSettings().catch(() => {
+    $("controlResult").textContent = "设置读取失败，已使用本地默认值。";
+  });
   refreshSources().catch(() => {
     $("controlResult").textContent = "视频源列表暂时不可用，请确认后端服务已启动。";
   });
@@ -1279,3 +1827,10 @@ function init() {
 }
 
 init();
+
+
+
+
+
+
+

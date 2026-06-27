@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from pathlib import Path
@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .engine import EngineConfig, FocusEngine
 from .deepseek_client import DeepSeekAdvisor
-from .schemas import ControlCommand, NetworkSourceCreate, SourceSelectionCommand
+from .schemas import AIReviewRequest, ControlCommand, NetworkSourceCreate, RuntimeSettings, SourceSelectionCommand
 
 
 app = FastAPI(title="Family Study Assistant Edge Node")
@@ -66,10 +66,30 @@ def state() -> dict:
     return engine.get_payload()
 
 
+@app.get("/settings")
+def settings() -> dict:
+    return engine.get_settings()
+
+
+@app.post("/settings")
+def update_settings(payload: RuntimeSettings) -> dict:
+    if hasattr(payload, "model_dump"):
+        data = payload.model_dump()
+    else:
+        data = payload.dict()
+    return engine.update_settings(data)
+
+
 @app.get("/ai/advice")
 def ai_advice(force: bool = False) -> dict:
     return advisor.advise(engine.get_payload(), force=force)
 
+
+@app.post("/ai/review")
+def ai_review(payload: AIReviewRequest, force: bool = False) -> dict:
+    context = payload.context
+    context.setdefault("current", engine.get_payload())
+    return advisor.review(context, force=force)
 
 @app.get("/sources")
 def sources() -> dict:
@@ -158,3 +178,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
+

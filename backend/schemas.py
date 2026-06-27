@@ -1,6 +1,6 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -39,3 +39,16 @@ class NetworkSourceCreate(BaseModel):
     label: str = Field(min_length=1, max_length=60)
     url: str = Field(min_length=1, max_length=1024)
     transport: Literal["stream", "snapshot"] = "stream"
+
+
+class RuntimeSettings(BaseModel):
+    awayTimeoutMinutes: int = Field(ge=1, le=120)
+    xiaozhiMcpUrl: str = Field(default="", max_length=1024)
+    xiaozhiMcpToken: str = Field(default="", max_length=512)
+    ageMode: Literal["primary", "middle", "high"] = "middle"
+
+
+class AIReviewRequest(BaseModel):
+    context: dict[str, Any]
+
+

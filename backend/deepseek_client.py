@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -94,6 +94,54 @@ def _local_advice(payload: dict[str, Any], reason: str = "") -> dict[str, Any]:
         advice["fallbackReason"] = reason
     return advice
 
+def _local_review_advice(context: dict[str, Any], reason: str = "") -> dict[str, Any]:
+    stats = context.get("stats", {}) or {}
+    range_label = context.get("range", {}).get("label", "近期")
+    focus_ratio = int(stats.get("focusRatio") or 0)
+    away_count = int(stats.get("awayCount") or 0)
+    distracted_count = int(stats.get("distractedCount") or 0)
+    avg_score = stats.get("avgScore") or "--"
+
+    if away_count:
+        title = "留意离座发生的时段"
+        summary = f"{range_label} 内出现 {away_count} 次离座段，建议结合任务类型观察是否集中发生在同一类任务后。"
+        observations = [f"专注占比约 {focus_ratio}% 。", f"平均专注分为 {avg_score}。", "离座段需要结合任务切换和休息节奏一起看。"]
+        action_plan = ["标记离座前后的任务类型。", "把容易触发离座的任务拆短。", "优先调整休息节奏，而不是立即增加提醒频率。"]
+        should_remind = False
+        level = "observe"
+        script = ""
+    elif distracted_count or focus_ratio < 60:
+        title = "近期注意力波动偏多"
+        summary = f"{range_label} 内专注占比约 {focus_ratio}% ，更适合复盘任务难度、时间切分和提醒时机。"
+        observations = [f"出现 {distracted_count} 次波动段。", f"平均专注分为 {avg_score}。", "短时波动不等同于不专注，重点看是否反复出现在固定时段。"]
+        action_plan = ["查看热力墙中波动集中的时间段。", "把长任务拆成 10-15 分钟的小段。", "托管提醒优先设置为低频、短句。"]
+        should_remind = True
+        level = "level_1"
+        script = "小智提醒你：我们先把当前这一小段完成，再休息一下眼睛。"
+    else:
+        title = "近期节奏比较稳定"
+        summary = f"{range_label} 内整体学习节奏平稳，建议减少打断，把 API 建议用于阶段复盘。"
+        observations = [f"专注占比约 {focus_ratio}% 。", f"平均专注分为 {avg_score}。", "当前更适合维持节奏，而不是主动提醒。"]
+        action_plan = ["保持现有任务切分。", "只在连续波动或离座集中时调整策略。", "复盘时关注趋势，不用纠结单帧分数。"]
+        should_remind = False
+        level = "observe"
+        script = ""
+
+    result = {
+        "title": title,
+        "summary": summary,
+        "bullets": action_plan[:3],
+        "observations": observations,
+        "actionPlan": action_plan,
+        "shouldRemind": should_remind,
+        "reminderLevel": level,
+        "message": script,
+        "xiaozhiScript": script,
+        "reason": "基于 review 时间窗内的状态占比、波动/离座次数和趋势桶生成。",
+    }
+    if reason:
+        result["fallbackReason"] = reason
+    return result
 
 class DeepSeekAdvisor:
     def __init__(self) -> None:
@@ -115,7 +163,7 @@ class DeepSeekAdvisor:
         signature = self._signature(payload)
         with self._lock:
             remaining = self.min_interval_seconds - int(now - self._last_called_at)
-            if self._last_result and remaining > 0 and not force:
+            if self._last_result and remaining > 0 and not force and signature == self._last_payload_signature:
                 return self._response(payload, self._last_result, cached=True, remaining=remaining)
 
             api_key = _setting("DEEPSEEK_API_KEY")
@@ -131,6 +179,28 @@ class DeepSeekAdvisor:
 
             self._store(now, signature, result)
             return self._response(payload, result, cached=False, remaining=self.min_interval_seconds)
+
+    def review(self, context: dict[str, Any], force: bool = False) -> dict[str, Any]:
+        now = time.time()
+        signature = self._review_signature(context)
+        with self._lock:
+            remaining = self.min_interval_seconds - int(now - self._last_called_at)
+            if self._last_result and remaining > 0 and not force and signature == self._last_payload_signature:
+                return self._response(context, self._last_result, cached=True, remaining=remaining)
+
+            api_key = _setting("DEEPSEEK_API_KEY")
+            if not api_key:
+                result = _local_review_advice(context, "DEEPSEEK_API_KEY 未配置，使用本地复盘建议。")
+                self._store(now, signature, result)
+                return self._response(context, result, cached=False, remaining=self.min_interval_seconds)
+
+            try:
+                result = self._call_deepseek_review(context, api_key)
+            except Exception as error:  # pragma: no cover - depends on network/API state.
+                result = _local_review_advice(context, f"DeepSeek 调用失败，使用本地复盘建议：{error}")
+
+            self._store(now, signature, result)
+            return self._response(context, result, cached=False, remaining=self.min_interval_seconds)
 
     def _store(self, called_at: float, signature: str, result: dict[str, Any]) -> None:
         self._last_called_at = called_at
@@ -209,6 +279,63 @@ class DeepSeekAdvisor:
         parsed = json.loads(content)
         return self._normalize_result(parsed)
 
+    def _call_deepseek_review(self, context: dict[str, Any], api_key: str) -> dict[str, Any]:
+        base_url = _setting("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+        request_payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是儿童学习陪伴系统的阶段复盘顾问。"
+                        "实时专注分、状态和指标已经由本地视觉算法计算完成；"
+                        "你不要声称自己看到了画面，也不要重新做视觉判断。"
+                        "你的任务是基于时间窗统计、趋势桶、热力桶和事件，分析近期行为模式，给出任务切分、休息节奏、托管提醒策略。"
+                        "输出必须是 JSON，不要输出 Markdown。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task": "基于 review 时间窗的时域数据，生成家长端复盘建议和必要时的小智提醒话术。",
+                            "output_schema": {
+                                "title": "复盘标题，强调近期模式",
+                                "summary": "一到两句说明近期行为模式，不要只描述当前帧",
+                                "bullets": ["策略建议1", "策略建议2", "策略建议3"],
+                                "observations": ["基于时间分布/趋势/热力桶的观察1", "观察2", "观察3"],
+                                "actionPlan": ["可执行步骤1", "步骤2", "步骤3"],
+                                "shouldRemind": "是否建议在托管状态下提醒，布尔值",
+                                "reminderLevel": "observe|level_1|level_2|level_3",
+                                "message": "如果提醒，给小智朗读的一句话；不提醒则为空字符串",
+                                "xiaozhiScript": "可直接发给孩子听的小智话术；不提醒则为空字符串",
+                                "reason": "说明使用了哪些时域证据",
+                            },
+                            "reviewContext": context,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            "stream": False,
+            "response_format": {"type": "json_object"},
+        }
+        data = json.dumps(request_payload).encode("utf-8")
+        request = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+        content = raw["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        return self._normalize_result(parsed)
+
     def _normalize_result(self, result: dict[str, Any]) -> dict[str, Any]:
         bullets = result.get("bullets")
         if not isinstance(bullets, list):
@@ -234,6 +361,16 @@ class DeepSeekAdvisor:
             "reason": str(result.get("reason") or ""),
         }
 
+    def _review_signature(self, context: dict[str, Any]) -> str:
+        compact = {
+            "range": context.get("range"),
+            "stats": context.get("stats"),
+            "trendBuckets": context.get("trendBuckets"),
+            "heatmapHighlights": context.get("heatmapHighlights"),
+            "current": context.get("current"),
+        }
+        return "review:" + json.dumps(compact, sort_keys=True, ensure_ascii=False)
+
     def _signature(self, payload: dict[str, Any]) -> str:
         compact = {
             "status": payload.get("status"),
@@ -242,3 +379,6 @@ class DeepSeekAdvisor:
             "metrics": payload.get("metrics"),
         }
         return json.dumps(compact, sort_keys=True, ensure_ascii=False)
+
+
+
