@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#fbf6ee"/>
+  <rect width="1600" height="10" fill="#ef6a32"/>
+  <text x="70" y="75" font-family="Microsoft YaHei" font-size="24" fill="#667085">小智伴学 · 三学段模式切换架构</text>
+  <text x="70" y="140" font-family="Microsoft YaHei" font-weight="700" font-size="46" fill="#172338">语音选择一次，策略、回答与家长端同步切换</text>
+  <rect x="70" y="220" width="280" height="500" fill="#fff" stroke="#ddd2c4"/>
+  <circle cx="210" cy="360" r="92" fill="#fde3d4"/>
+  <path d="M160 360h20m18-45v90m26-130v170m26-110v50m25-90v130" stroke="#ef6a32" stroke-width="14" stroke-linecap="round"/>
+  <text x="120" y="520" font-family="Microsoft YaHei" font-weight="700" font-size="30" fill="#172338">开机语音选择</text>
+  <text x="112" y="566" font-family="Microsoft YaHei" font-size="21" fill="#667085">小学 / 初中 / 高中</text>
+  <text x="109" y="608" font-family="Consolas" font-size="18" fill="#3478c8">set_study_stage</text>
+  <path d="M350 470H440" stroke="#ef6a32" stroke-width="5"/>
+  <path d="M440 470l-18-12v24z" fill="#ef6a32"/>
+  <g font-family="Microsoft YaHei">
+    <rect x="470" y="230" width="300" height="430" fill="#fff" stroke="#ef6a32" stroke-width="4"/>
+    <rect x="650" y="230" width="120" height="10" fill="#ef6a32"/>
+    <text x="505" y="292" font-size="34" font-weight="700" fill="#172338">小学模式</text>
+    <text x="505" y="340" font-size="21" fill="#667085">短句 · 生活化 · 小步反馈</text>
+    <text x="505" y="420" font-size="52" font-weight="700" fill="#ef6a32">55</text>
+    <text x="590" y="420" font-size="20" fill="#667085">专注阈值</text>
+    <text x="505" y="485" font-size="28" font-weight="700" fill="#172338">20s / 180s</text>
+    <text x="505" y="522" font-size="19" fill="#667085">持续分心 / 冷却</text>
+    <text x="505" y="592" font-size="20" fill="#485468">一次引导一到两步</text>
+    <rect x="800" y="230" width="300" height="430" fill="#fff" stroke="#3478c8" stroke-width="4"/>
+    <rect x="980" y="230" width="120" height="10" fill="#3478c8"/>
+    <text x="835" y="292" font-size="34" font-weight="700" fill="#172338">初中模式</text>
+    <text x="835" y="340" font-size="21" fill="#667085">知识点 · 题型 · 错因复盘</text>
+    <text x="835" y="420" font-size="52" font-weight="700" fill="#3478c8">65</text>
+    <text x="920" y="420" font-size="20" fill="#667085">专注阈值</text>
+    <text x="835" y="485" font-size="28" font-weight="700" fill="#172338">15s / 120s</text>
+    <text x="835" y="522" font-size="19" fill="#667085">持续分心 / 冷却</text>
+    <text x="835" y="592" font-size="20" fill="#485468">证据建立步骤</text>
+    <rect x="1130" y="230" width="300" height="430" fill="#fff" stroke="#2f8a69" stroke-width="4"/>
+    <rect x="1310" y="230" width="120" height="10" fill="#2f8a69"/>
+    <text x="1165" y="292" font-size="34" font-weight="700" fill="#172338">高中模式</text>
+    <text x="1165" y="340" font-size="21" fill="#667085">推理链 · 边界 · 路径选择</text>
+    <text x="1165" y="420" font-size="52" font-weight="700" fill="#2f8a69">70</text>
+    <text x="1250" y="420" font-size="20" fill="#667085">专注阈值</text>
+    <text x="1165" y="485" font-size="28" font-weight="700" fill="#172338">25s / 240s</text>
+    <text x="1165" y="522" font-size="19" fill="#667085">持续分心 / 冷却</text>
+    <text x="1165" y="592" font-size="20" fill="#485468">检查边界与反例</text>
+  </g>
+  <rect x="470" y="700" width="960" height="100" fill="#172338"/>
+  <text x="550" y="762" font-family="Microsoft YaHei" font-size="27" font-weight="700" fill="#fff">机器人语音确认</text>
+  <text x="840" y="762" font-family="Microsoft YaHei" font-size="27" font-weight="700" fill="#ffd2bb">统一学段状态</text>
+  <text x="1120" y="762" font-family="Microsoft YaHei" font-size="27" font-weight="700" fill="#fff">家长端与策略引擎</text>
+</svg>

@@ -12,6 +12,9 @@
 - 离座、分心、超时离座等事件记录
 - 家长提醒入口和 DeepSeek 建议能力
 - 多页面控制台：`Dashboard`、`Advice`、`Review`、`Devices`
+- 小学、初中、高中三种学习模式与分层提醒策略
+- 小智 MCP 提醒队列、语音切换工具和播报回执
+- 单一分层知识库：语文、数学、英语与学习方法
 - 一键重置：回到默认本机摄像头并清空当前会话状态
 
 ## Stack
@@ -28,6 +31,10 @@
 ├─ backend/
 │  ├─ main.py                  # FastAPI app entry
 │  ├─ engine.py                # camera capture and focus analysis
+│  ├─ study_modes.py           # three-stage learning policies
+│  ├─ runtime_state.py         # cross-process stage state
+│  ├─ reminder_policy.py       # reminder thresholds and cooldowns
+│  ├─ xiaozhi_mcp_runtime.py   # MCP process lifecycle
 │  ├─ schemas.py               # request/response models
 │  ├─ deepseek_client.py       # DeepSeek integration
 │  ├─ run_server.py            # local startup helper
@@ -37,10 +44,15 @@
 │     ├─ parent-console-v2.html
 │     ├─ parent-console-v2.css
 │     └─ parent-console-v2.js
+├─ xiaozhi_bridge/             # Xiaozhi MCP tool server
+├─ knowledge_base/             # layered study knowledge base
+├─ tests/                      # backend and frontend contracts
 ├─ DESIGN.md
 ├─ PLATFORM_USAGE.md
 ├─ docs/
-│  └─ backend-service.md
+│  ├─ backend-service.md
+│  ├─ configuration/           # console role and acceptance checklist
+│  └─ defense_assets/          # defense-ready PNG, SVG and CSV
 └─ README.md
 ```
 
@@ -51,7 +63,7 @@ Recommended Python version: `3.10+`
 Create a virtual environment and install dependencies:
 
 ```powershell
-cd C:\Users\20245\WeChatProjects\miniprogram-1
+cd D:\path\to\xueban
 py -3.12 -m venv .venv-backend
 .\.venv-backend\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
@@ -135,6 +147,62 @@ Meaning:
 - `FOCUS_STREAM_OPEN_TIMEOUT_MS`: network stream open timeout
 - `FOCUS_STREAM_READ_TIMEOUT_MS`: network stream read timeout
 
+## Three Study Modes
+
+The runtime exposes one shared stage state for the parent console and MCP
+process:
+
+| Mode | Focus threshold | Persistent distraction | Cooldown |
+| --- | ---: | ---: | ---: |
+| Primary | 55 | 20 s | 180 s |
+| Middle | 65 | 15 s | 120 s |
+| High | 70 | 25 s | 240 s |
+
+The stage can be changed from the parent console or through
+`set_study_stage`. The robot confirms the selected mode by voice.
+
+## Xiaozhi MCP Reminder Loop
+
+The MCP bridge publishes five tools:
+
+- `set_study_stage`
+- `get_study_stage`
+- `check_study_focus_and_remind_child`
+- `mark_study_reminder_spoken`
+- `inspect_study_reminder_queue`
+
+The focus engine creates a reminder only after the stage-specific persistence,
+cooldown, and rate-limit rules are satisfied. Xiaozhi leases the reminder,
+speaks `reminderText`, and acknowledges it after playback.
+
+Configure the endpoint only at runtime. Never commit the endpoint URL or token.
+See [deployment and acceptance](docs/configuration/DEPLOYMENT_AND_ACCEPTANCE.md).
+
+## Knowledge Base
+
+The editable source and upload-ready document are stored in
+[`knowledge_base/`](knowledge_base/). The document covers Chinese, mathematics,
+English, study planning, focus reminders, and review methods for all three
+stages.
+
+## Defense Assets
+
+Presentation-ready evidence is available in
+[`docs/defense_assets/`](docs/defense_assets/):
+
+- eight 1920x1080 PNG graphics
+- editable SVG flowcharts
+- a UTF-8 acceptance matrix CSV
+
+These assets use the warm visual system from the project business-plan deck.
+
+## Current Boundary
+
+The MCP integration is tool-call driven. Camera analysis can enqueue reminders,
+but guaranteed speech from a completely idle ESP32 device without a wake/button
+event requires firmware-level push playback support and remains the next-stage
+upgrade.
+
 ## DeepSeek Configuration
 
 Create `.env` in the project root if you want AI suggestions:
@@ -172,7 +240,9 @@ Check Python syntax:
 - The V2 dashboard uses a snapshot-refresh strategy rather than a native streaming player.
 - Network video sources can fail fast and retry with cooldown instead of freezing the whole session.
 - The connection label in the top-right now distinguishes between stable local video and a reconnecting WebSocket status channel.
-- Local research material, PPT assets, and internal integration notes are intentionally excluded from this GitHub repository.
+- Only delivery-ready visual assets are included. Raw PPT projects, local
+  research folders, tokens, logs, runtime queues, camera images, and private
+  integration material remain excluded.
 
 ## Ignore Before Publishing
 

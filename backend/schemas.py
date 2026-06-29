@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Literal
 
@@ -23,6 +23,8 @@ class FocusPayload(BaseModel):
     sourceId: str | None = None
     sourceLabel: str | None = None
     engineMode: str | None = None
+    studyStage: Literal["primary", "middle", "high"] | None = None
+    stageLabel: str | None = None
 
 
 class ControlCommand(BaseModel):
@@ -46,9 +48,17 @@ class RuntimeSettings(BaseModel):
     xiaozhiMcpUrl: str = Field(default="", max_length=1024)
     xiaozhiMcpToken: str = Field(default="", max_length=512)
     ageMode: Literal["primary", "middle", "high"] = "middle"
+    stageSource: Literal["parent", "voice", "system"] = "parent"
+
+
+class StudyStageCommand(BaseModel):
+    stage: Literal["primary", "middle", "high"]
+    source: Literal["parent", "voice", "system"] = "parent"
+
+
+class McpEndpointConfig(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)
 
 
 class AIReviewRequest(BaseModel):
     context: dict[str, Any]
-
-

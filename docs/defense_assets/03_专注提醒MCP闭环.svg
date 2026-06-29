@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#fbf6ee"/>
+  <rect width="1600" height="10" fill="#2f8a69"/>
+  <text x="70" y="75" font-family="Microsoft YaHei" font-size="24" fill="#667085">小智伴学 · MCP 专注提醒闭环</text>
+  <text x="70" y="140" font-family="Microsoft YaHei" font-weight="700" font-size="46" fill="#172338">识别、决策、播报和回执，每一步都可追踪</text>
+  <circle cx="760" cy="505" r="250" fill="none" stroke="#d9cbbc" stroke-width="3" stroke-dasharray="12 14"/>
+  <circle cx="760" cy="505" r="145" fill="#172338"/>
+  <text x="682" y="490" font-family="Microsoft YaHei" font-weight="700" font-size="34" fill="#fff">可控提醒</text>
+  <text x="712" y="540" font-family="Microsoft YaHei" font-weight="700" font-size="34" fill="#ffd2bb">闭环</text>
+  <g font-family="Microsoft YaHei">
+    <g transform="translate(615 190)"><rect width="290" height="105" fill="#fff" stroke="#ef6a32" stroke-width="4"/><text x="24" y="43" font-size="26" font-weight="700" fill="#172338">01 摄像头采样</text><text x="24" y="76" font-size="18" fill="#667085">本机或网络视频源</text></g>
+    <g transform="translate(990 290)"><rect width="300" height="105" fill="#fff" stroke="#3478c8" stroke-width="4"/><text x="24" y="43" font-size="26" font-weight="700" fill="#172338">02 Focus Lab</text><text x="24" y="76" font-size="18" fill="#667085">视线、位姿、在座、稳定性</text></g>
+    <g transform="translate(1015 610)"><rect width="300" height="105" fill="#fff" stroke="#2f8a69" stroke-width="4"/><text x="24" y="43" font-size="26" font-weight="700" fill="#172338">03 分层策略</text><text x="24" y="76" font-size="18" fill="#667085">阈值、持续、冷却、限频</text></g>
+    <g transform="translate(615 730)"><rect width="290" height="105" fill="#fff" stroke="#f0b33b" stroke-width="4"/><text x="24" y="43" font-size="26" font-weight="700" fill="#172338">04 安全入队</text><text x="24" y="76" font-size="18" fill="#667085">持久化、租约、失败恢复</text></g>
+    <g transform="translate(230 610)"><rect width="300" height="105" fill="#fff" stroke="#d85b54" stroke-width="4"/><text x="24" y="43" font-size="26" font-weight="700" fill="#172338">05 小智播报</text><text x="24" y="76" font-size="18" fill="#667085">只朗读 reminderText</text></g>
+    <g transform="translate(205 290)"><rect width="300" height="105" fill="#fff" stroke="#3478c8" stroke-width="4"/><text x="24" y="43" font-size="26" font-weight="700" fill="#172338">06 播报回执</text><text x="24" y="76" font-size="18" fill="#667085">完成标记与状态同步</text></g>
+  </g>
+  <g fill="none" stroke="#ef6a32" stroke-width="5">
+    <path d="M905 245C965 250 1005 270 1030 290"/>
+    <path d="M1260 395C1305 470 1290 555 1240 610"/>
+    <path d="M1015 680C965 740 920 770 905 775"/>
+    <path d="M615 785C555 770 505 735 485 715"/>
+    <path d="M270 610C215 545 200 470 235 395"/>
+    <path d="M505 300C550 260 585 245 615 240"/>
+  </g>
+  <rect x="70" y="790" width="390" height="62" fill="#172338"/>
+  <text x="92" y="831" font-family="Consolas" font-size="18" fill="#fff">5 MCP tools · queue · lease · ack</text>
+</svg>

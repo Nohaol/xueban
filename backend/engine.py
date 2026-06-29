@@ -44,6 +44,9 @@ except ImportError:  # pragma: no cover
     no_face_features = None
 
 from .schemas import FocusMetrics, FocusPayload
+from .reminder_policy import ReminderPolicy
+from .runtime_state import RuntimeStateStore, mask_secret
+from .xiaozhi_bridge import ReminderStore
 
 
 PLACEHOLDER_JPEG = base64.b64decode(
@@ -89,19 +92,44 @@ class VideoSource:
 
 
 class FocusEngine:
-    def __init__(self, config: EngineConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: EngineConfig | None = None,
+        *,
+        state_store: RuntimeStateStore | None = None,
+        reminder_store: ReminderStore | None = None,
+        reminder_policy: ReminderPolicy | None = None,
+    ) -> None:
         self.config = config or EngineConfig()
+        runtime_dir = Path(
+            os.getenv(
+                "XUEBAN_RUNTIME_DIR",
+                Path(__file__).resolve().parent / "runtime",
+            )
+        )
+        self.state_store = state_store or RuntimeStateStore(
+            runtime_dir / "runtime_state.json"
+        )
+        self.reminder_store = reminder_store or ReminderStore(
+            runtime_dir / "xiaozhi_reminders.json",
+            state_store=self.state_store,
+        )
+        self.reminder_policy = reminder_policy or ReminderPolicy(
+            state_path=runtime_dir / "reminder_policy.json"
+        )
+        persisted_state = self.state_store.read()
+        self.config.away_timeout_seconds = (
+            int(persisted_state["awayTimeoutMinutes"]) * 60
+        )
+        self._reminder_stage_cache: str | None = None
+        self._reminder_stage_cache_at = 0.0
+        self._last_reminder_error: str | None = None
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._capture = None
         self._frame_counter = 0
         self._last_control = {"command": "", "text": "", "received_at": 0.0}
-        self._settings = {
-            "xiaozhiMcpUrl": "",
-            "xiaozhiMcpToken": "",
-            "ageMode": "middle",
-        }
         self._mode = "boot"
         self._away_started_at: float | None = None
         self._presence_history: Deque[tuple[float, bool]] = deque()
@@ -151,53 +179,106 @@ class FocusEngine:
                 payload = self._latest_payload.model_dump()
             else:
                 payload = self._latest_payload.dict()
-            return self._apply_age_mode(payload)
+        state = self.state_store.read()
+        payload["studyStage"] = state["studyStage"]
+        payload["stageLabel"] = state["stageLabel"]
+        return payload
 
     def get_settings(self) -> dict:
-        with self._lock:
-            return {
-                "awayTimeoutMinutes": max(1, int(round(self.config.away_timeout_seconds / 60))),
-                "xiaozhiMcpUrl": self._settings.get("xiaozhiMcpUrl", ""),
-                "xiaozhiMcpToken": self._settings.get("xiaozhiMcpToken", ""),
-                "ageMode": self._settings.get("ageMode", "middle"),
-            }
+        return self._public_settings(self.state_store.read())
 
     def update_settings(self, settings: dict) -> dict:
-        with self._lock:
-            minutes = int(settings.get("awayTimeoutMinutes", self.config.away_timeout_seconds // 60))
-            self.config.away_timeout_seconds = max(60, min(minutes * 60, 120 * 60))
-            self._settings["xiaozhiMcpUrl"] = str(settings.get("xiaozhiMcpUrl", "")).strip()
-            self._settings["xiaozhiMcpToken"] = str(settings.get("xiaozhiMcpToken", "")).strip()
-            self._settings["ageMode"] = str(settings.get("ageMode", "middle") or "middle")
-            return {
-                "awayTimeoutMinutes": max(1, int(round(self.config.away_timeout_seconds / 60))),
-                "xiaozhiMcpUrl": self._settings.get("xiaozhiMcpUrl", ""),
-                "xiaozhiMcpToken": self._settings.get("xiaozhiMcpToken", ""),
-                "ageMode": self._settings.get("ageMode", "middle"),
-            }
+        state = self.state_store.update(settings)
+        self.config.away_timeout_seconds = int(state["awayTimeoutMinutes"]) * 60
+        return self._public_settings(state)
 
-    def _apply_age_mode(self, payload: dict) -> dict:
-        mode = self._settings.get("ageMode", "middle")
-        if mode == "primary":
-            metric_delta, score_delta = 4, 3
-        elif mode == "high":
-            metric_delta, score_delta = -7, -6
+    def process_automatic_reminder(self, payload: dict | FocusPayload) -> dict | None:
+        if hasattr(payload, "model_dump"):
+            focus_payload = payload.model_dump()
+        elif hasattr(payload, "dict"):
+            focus_payload = payload.dict()
         else:
-            metric_delta, score_delta = 0, 0
+            focus_payload = dict(payload)
+        try:
+            stage = self._cached_reminder_stage()
+        except Exception as error:
+            self._record_reminder_error("state_read", error)
+            return None
+        try:
+            reminder = self.reminder_policy.observe(focus_payload, stage)
+        except Exception as error:
+            self._record_reminder_error("policy_observe", error)
+            return None
+        if reminder is not None:
+            try:
+                self.reminder_store.enqueue(
+                    "managed_ai_reminder",
+                    reminder["text"],
+                    focus_payload,
+                    reminder_metadata=reminder,
+                )
+            except Exception as error:
+                cancel_candidate = getattr(
+                    self.reminder_policy,
+                    "cancel_candidate",
+                    None,
+                )
+                if callable(cancel_candidate):
+                    try:
+                        cancel_candidate(reminder)
+                    except Exception:
+                        pass
+                self._record_reminder_error("enqueue", error)
+                return None
+            mark_sent = getattr(self.reminder_policy, "mark_sent", None)
+            if callable(mark_sent):
+                try:
+                    mark_sent(reminder)
+                except Exception as error:
+                    self._record_reminder_error("policy_commit", error)
+            reminder.pop("_policyReservation", None)
+        return reminder
 
-        if metric_delta:
-            metrics = dict(payload.get("metrics") or {})
-            for key in ("gaze", "posture", "stability"):
-                metrics[key] = self._clamp(float(metrics.get(key, 0)) + metric_delta)
-            payload["metrics"] = metrics
+    @property
+    def last_reminder_error(self) -> str | None:
+        return self._last_reminder_error
 
-        adjusted_score = self._clamp(float(payload.get("focusScore", 0)) + score_delta)
-        payload["focusScore"] = adjusted_score
-        if mode == "high" and payload.get("status") == "normal" and adjusted_score < 68:
-            payload["status"] = "distracted"
-        if mode == "primary" and payload.get("status") == "distracted" and adjusted_score >= 60:
-            payload["status"] = "normal"
-        return payload
+    def _cached_reminder_stage(self) -> str:
+        now = time.monotonic()
+        if (
+            self._reminder_stage_cache is not None
+            and now - self._reminder_stage_cache_at < 1.0
+        ):
+            return self._reminder_stage_cache
+        state = self.state_store.read()
+        stage = str(state["studyStage"])
+        self._reminder_stage_cache = stage
+        self._reminder_stage_cache_at = now
+        return stage
+
+    def _record_reminder_error(self, operation: str, error: Exception) -> None:
+        self._last_reminder_error = f"{operation}:{type(error).__name__}"
+
+    @staticmethod
+    def _public_settings(state: dict) -> dict:
+        token = str(state.get("xiaozhiMcpToken") or "")
+        masked_token = mask_secret(token)
+        url = str(state.get("xiaozhiMcpUrl") or "")
+        mcp_prefix = "wss://api.xiaozhi.me/mcp/"
+        if url.startswith(mcp_prefix):
+            url = mcp_prefix
+        return {
+            "awayTimeoutMinutes": int(state["awayTimeoutMinutes"]),
+            "xiaozhiMcpUrl": url,
+            "xiaozhiMcpToken": masked_token,
+            "xiaozhiMcpTokenConfigured": bool(token),
+            "ageMode": state["studyStage"],
+            "studyStage": state["studyStage"],
+            "stageLabel": state["stageLabel"],
+            "stageSource": state["stageSource"],
+            "stageUpdatedAt": state["stageUpdatedAt"],
+            "policy": state["policy"],
+        }
 
     def get_snapshot_bytes(self) -> bytes:
         with self._lock:
@@ -499,6 +580,7 @@ class FocusEngine:
         while not self._stop_event.is_set():
             started_at = time.time()
             payload, frame = self._next_state()
+            self.process_automatic_reminder(payload)
             jpeg = self._encode_frame(frame)
             with self._lock:
                 self._latest_payload = payload
@@ -824,20 +906,14 @@ class FocusEngine:
             },
             "screen": {},
             "thresholds": {
-                "yawSafeDelta": 12,
                 "yawSoftDelta": 12,
                 "yawHardDelta": 25,
-                "pitchSafeDelta": 12,
                 "pitchSoftDelta": 15,
                 "pitchHardDelta": 30,
-                "rollSafeDelta": 8,
                 "rollHardDelta": 22,
-                "centerSafeDelta": 0.08,
                 "centerHardDelta": 0.24,
                 "areaMinRatio": 0.55,
                 "areaMaxRatio": 1.8,
-                "areaHardMinRatio": 0.35,
-                "areaHardMaxRatio": 2.6,
                 "eyeClosedRatio": 0.55,
             },
         }
@@ -861,7 +937,7 @@ class FocusEngine:
             return "flow" if score >= 86 else "normal"
         if mp_status == "distracted" or mp_status == "fatigue":
             return "distracted"
-        return "normal"
+        return "normal" if score >= 68 else "distracted"
 
     def _metrics_from_mediapipe_state(self, state: dict, features: dict) -> FocusMetrics:
         subs = state.get("subScores", {}) or {}

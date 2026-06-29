@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#fbf6ee"/>
+  <rect width="1600" height="10" fill="#3478c8"/>
+  <text x="70" y="75" font-family="Microsoft YaHei" font-size="24" fill="#667085">小智伴学 · 软硬件技术路线</text>
+  <text x="70" y="140" font-family="Microsoft YaHei" font-weight="700" font-size="46" fill="#172338">硬件负责感知与表达，软件负责判断与协同</text>
+  <g font-family="Microsoft YaHei">
+    <rect x="70" y="210" width="620" height="535" fill="#fff" stroke="#ddd2c4"/>
+    <rect x="70" y="210" width="620" height="10" fill="#ef6a32"/>
+    <text x="105" y="278" font-size="32" font-weight="700" fill="#172338">硬件端</text>
+    <g transform="translate(105 315)">
+      <rect width="250" height="115" fill="#fde3d4"/><text x="24" y="46" font-size="25" font-weight="700" fill="#172338">本机摄像头</text><text x="24" y="80" font-size="18" fill="#667085">实时采集学习状态</text>
+      <rect x="300" width="250" height="115" fill="#fde3d4"/><text x="324" y="46" font-size="25" font-weight="700" fill="#172338">电脑计算节点</text><text x="324" y="80" font-size="18" fill="#667085">视觉与服务运行</text>
+      <rect y="155" width="250" height="115" fill="#fde3d4"/><text x="24" y="201" font-size="25" font-weight="700" fill="#172338">ESP32 小智</text><text x="24" y="235" font-size="18" fill="#667085">对话、问答与提醒</text>
+      <rect x="300" y="155" width="250" height="115" fill="#fde3d4"/><text x="324" y="201" font-size="25" font-weight="700" fill="#172338">扬声器 / 动作</text><text x="324" y="235" font-size="18" fill="#667085">自然反馈表达</text>
+    </g>
+    <rect x="910" y="210" width="620" height="535" fill="#fff" stroke="#ddd2c4"/>
+    <rect x="910" y="210" width="620" height="10" fill="#3478c8"/>
+    <text x="945" y="278" font-size="32" font-weight="700" fill="#172338">软件端</text>
+    <g transform="translate(945 315)">
+      <rect width="250" height="115" fill="#dfeaf8"/><text x="24" y="46" font-size="25" font-weight="700" fill="#172338">OpenCV / MediaPipe</text><text x="24" y="80" font-size="18" fill="#667085">视频与视觉特征</text>
+      <rect x="300" width="250" height="115" fill="#dfeaf8"/><text x="324" y="46" font-size="25" font-weight="700" fill="#172338">Focus Lab</text><text x="324" y="80" font-size="18" fill="#667085">专注评分与解释</text>
+      <rect y="155" width="250" height="115" fill="#dfeaf8"/><text x="24" y="201" font-size="25" font-weight="700" fill="#172338">FastAPI / 状态引擎</text><text x="24" y="235" font-size="18" fill="#667085">策略、队列、接口</text>
+      <rect x="300" y="155" width="250" height="115" fill="#dfeaf8"/><text x="324" y="201" font-size="25" font-weight="700" fill="#172338">MCP / 知识库</text><text x="324" y="235" font-size="18" fill="#667085">联动与可信回答</text>
+    </g>
+    <path d="M690 475H910" stroke="#2f8a69" stroke-width="7"/>
+    <path d="M910 475l-22-14v28z" fill="#2f8a69"/>
+    <rect x="704" y="395" width="192" height="160" rx="80" fill="#2f8a69"/>
+    <text x="748" y="462" font-size="25" font-weight="700" fill="#fff">统一事件</text>
+    <text x="760" y="502" font-size="25" font-weight="700" fill="#fff">协议</text>
+    <rect x="195" y="785" width="1210" height="72" fill="#172338"/>
+    <text x="285" y="832" font-size="24" font-weight="700" fill="#fff">感知输入</text>
+    <text x="610" y="832" font-size="24" font-weight="700" fill="#ffd2bb">分层决策</text>
+    <text x="925" y="832" font-size="24" font-weight="700" fill="#fff">机器人表达</text>
+    <text x="1210" y="832" font-size="24" font-weight="700" fill="#bfe5d6">家长复盘</text>
+  </g>
+</svg>

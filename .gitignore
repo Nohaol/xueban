@@ -1,9 +1,13 @@
 .env
+.env*
 __pycache__/
 *.pyc
+.pytest_cache/
 .venv-backend/
 .venv-focus/
 backend/*.log
+backend/runtime/
+*.log
 .claude/
 .codegraph/
 focus_lab/__pycache__/

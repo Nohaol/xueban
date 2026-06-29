@@ -87,6 +87,7 @@
                 <span class="review-chip" data-student-label>学生 A</span>
                 <span class="review-chip" data-session-timer>学习中 00:00</span>
                 <span class="review-chip" data-connection-label>正在连接本地节点</span>
+                <span class="review-chip stage-chip" data-stage-label>初中模式</span>
               </div>
             </header>
             <div class="watch-grid">
@@ -166,6 +167,7 @@
                 <span class="review-chip" data-student-label>学生 A</span>
                 <span class="review-chip" data-session-timer>学习中 00:00</span>
                 <span class="review-chip" data-connection-label>正在连接本地节点</span>
+                <span class="review-chip stage-chip" data-stage-label>初中模式</span>
               </div>
             </header>
             <div class="advice-grid">
@@ -222,6 +224,7 @@
                 <span class="review-chip" id="reviewStudentLabel" data-student-label>学生 A</span>
                 <span class="review-chip" id="reviewSessionTimer" data-session-timer>学习中 00:00</span>
                 <span class="review-chip" id="reviewConnectionLabel" data-connection-label>正在连接本地节点</span>
+                <span class="review-chip stage-chip" data-stage-label>初中模式</span>
               </div>
             </header>
           <div class="review-grid">
@@ -300,6 +303,7 @@
                 <span class="review-chip" data-student-label>学生 A</span>
                 <span class="review-chip" data-session-timer>学习中 00:00</span>
                 <span class="review-chip" data-connection-label>正在连接本地节点</span>
+                <span class="review-chip stage-chip" data-stage-label>初中模式</span>
               </div>
             </header>
             <div class="device-grid">
@@ -357,26 +361,56 @@
                     <option value="managed">托管给小智</option>
                   </select>
                 </label>
-                <label>
-                  <span>托管提醒频率</span>
-                  <select id="managedReminderInterval">
-                    <option value="3">至少间隔 3 分钟</option>
-                    <option value="5">至少间隔 5 分钟</option>
-                    <option value="10">至少间隔 10 分钟</option>
-                  </select>
-                </label>
-                <label>
-                  <span>低于此分数提醒</span>
-                  <input id="managedScoreThreshold" type="number" min="40" max="90" step="1" value="65" />
-                </label>
-                <label>
-                  <span>年龄段</span>
-                  <select id="ageMode">
-                    <option value="primary">小学：宽松</option>
-                    <option value="middle">初中：标准</option>
-                    <option value="high">高中：严格</option>
-                  </select>
-                </label>
+                <fieldset class="stage-field">
+                  <legend>年龄段</legend>
+                  <div
+                    class="stage-segmented"
+                    id="studyStageControl"
+                    role="radiogroup"
+                    aria-describedby="stageSyncStatus"
+                  >
+                    <label>
+                      <input type="radio" name="studyStage" value="primary" />
+                      <span>小学</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="studyStage" value="middle" checked />
+                      <span>初中</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="studyStage" value="high" />
+                      <span>高中</span>
+                    </label>
+                  </div>
+                  <small class="stage-sync-status" id="stageSyncStatus" aria-live="polite">正在同步后端设置</small>
+                </fieldset>
+                <section class="stage-policy" aria-labelledby="stagePolicyTitle">
+                  <div class="stage-policy-head">
+                    <div>
+                      <span id="stagePolicyTitle">当前策略</span>
+                      <strong id="stageLabel">初中</strong>
+                    </div>
+                    <span class="stage-source" id="stageSource">默认</span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>提醒分数</dt>
+                      <dd><strong id="policyScoreThreshold">65</strong><span>分</span></dd>
+                    </div>
+                    <div>
+                      <dt>持续时间</dt>
+                      <dd><strong id="policyPersistSeconds">15</strong><span>秒</span></dd>
+                    </div>
+                    <div>
+                      <dt>冷却时间</dt>
+                      <dd><strong id="policyCooldownSeconds">120</strong><span>秒</span></dd>
+                    </div>
+                    <div>
+                      <dt>10分钟上限</dt>
+                      <dd><strong id="policyMaxPer10Minutes">3</strong><span>次</span></dd>
+                    </div>
+                  </dl>
+                </section>
                 <button class="primary-action full" type="submit">保存设置</button>
               </form>
             </aside>
@@ -389,5 +423,4 @@
     <script src="/static/parent-console-v2.js"></script>
   </body>
 </html>
-
 

@@ -3,3 +3,6 @@ uvicorn[standard]
 opencv-python
 mediapipe
 numpy
+filelock>=3.13,<4
+fastmcp>=3.4,<4
+websockets>=16.0,<17

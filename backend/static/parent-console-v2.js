@@ -131,24 +131,43 @@ const state = {
   lastReviewSampleStatus: "",
   lastReviewSampleScore: null,
   lastTrendRenderKey: "",
+  stageInitialized: false,
+  lastStageNoticeKey: "",
+  stageSyncInFlight: false,
   settings: {
     xiaozhiMcpUrl: "",
-    xiaozhiMcpToken: "",
+    xiaozhiMcpTokenConfigured: false,
+    tokenPreservationValue: "",
+    tokenDirty: false,
     aiAnalysisMode: "manual",
     awayThresholdMinutes: 15,
     handlingMode: "parent",
-    managedReminderInterval: 5,
-    managedScoreThreshold: 65,
-    ageMode: "middle",
+    studyStage: "middle",
+    stageLabel: "初中",
+    stageSource: "default",
+    stageUpdatedAt: 0,
+    policy: {
+      score_threshold: 65,
+      persist_seconds: 15,
+      cooldown_seconds: 120,
+      max_per_10_minutes: 3,
+    },
   },
   aiAutoTimer: null,
   lastManagedReminderAt: 0,
 };
 
-const AGE_MODE_CONFIG = {
-  primary: { label: "小学", scoreOffset: -5, intervalOffset: 1 },
-  middle: { label: "初中", scoreOffset: 0, intervalOffset: 0 },
-  high: { label: "高中", scoreOffset: 8, intervalOffset: -1 },
+const STAGE_LABELS = {
+  primary: "小学",
+  middle: "初中",
+  high: "高中",
+};
+
+const STAGE_SOURCE_LABELS = {
+  parent: "家长设置",
+  voice: "小智语音",
+  system: "系统同步",
+  default: "默认",
 };
 
 const VIDEO_REFRESH_SLOW_MS = 900;
@@ -272,6 +291,8 @@ function normalizePayload(payload) {
       sourceLabel: "等待视频源",
       sourceId: "",
       engineMode: "boot",
+      studyStage: state.settings.studyStage,
+      stageLabel: state.settings.stageLabel,
     },
     payload,
     {
@@ -352,8 +373,126 @@ function pushEvent(payload) {
   state.events = state.events.slice(0, 10);
 }
 
+function normalizeStudyStage(stage) {
+  return Object.prototype.hasOwnProperty.call(STAGE_LABELS, stage) ? stage : "middle";
+}
+
+function policyNumber(policy, key, fallback) {
+  const value = Number(policy?.[key]);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function stageNotice(stage, source) {
+  const label = STAGE_LABELS[stage] || "当前";
+  if (source === "voice") return `已由小智语音切换为${label}模式`;
+  if (source === "parent") return `已由家长切换为${label}模式`;
+  if (source === "system") return `已由系统切换为${label}模式`;
+  return `已同步为${label}模式`;
+}
+
+function renderStudyStage() {
+  const stage = normalizeStudyStage(state.settings.studyStage);
+  const label = state.settings.stageLabel || STAGE_LABELS[stage];
+  document.querySelectorAll("[data-stage-label]").forEach((element) => {
+    element.textContent = `${label}模式`;
+  });
+  document.querySelectorAll('input[name="studyStage"]').forEach((input) => {
+    input.checked = input.value === stage;
+  });
+
+  $("stageLabel").textContent = label;
+  $("stageSource").textContent =
+    STAGE_SOURCE_LABELS[state.settings.stageSource] || STAGE_SOURCE_LABELS.system;
+  $("policyScoreThreshold").textContent = policyNumber(
+    state.settings.policy,
+    "score_threshold",
+    65
+  );
+  $("policyPersistSeconds").textContent = policyNumber(
+    state.settings.policy,
+    "persist_seconds",
+    15
+  );
+  $("policyCooldownSeconds").textContent = policyNumber(
+    state.settings.policy,
+    "cooldown_seconds",
+    120
+  );
+  $("policyMaxPer10Minutes").textContent = policyNumber(
+    state.settings.policy,
+    "max_per_10_minutes",
+    3
+  );
+}
+
+function applyStudyStage(data, options = {}) {
+  const stage = normalizeStudyStage(data.studyStage || data.ageMode);
+  const source = data.stageSource || state.settings.stageSource || "system";
+  state.settings.studyStage = stage;
+  state.settings.stageLabel = data.stageLabel || STAGE_LABELS[stage];
+  state.settings.stageSource = source;
+  state.settings.stageUpdatedAt = data.stageUpdatedAt || state.settings.stageUpdatedAt || 0;
+  if (data.policy) {
+    state.settings.policy = Object.assign({}, state.settings.policy, data.policy);
+  }
+  state.stageInitialized = true;
+  renderStudyStage();
+
+  if (options.announce) {
+    const noticeKey = `${stage}:${source}:${state.settings.stageUpdatedAt || "current"}`;
+    if (noticeKey !== state.lastStageNoticeKey) {
+      state.lastStageNoticeKey = noticeKey;
+      $("stageSyncStatus").textContent = stageNotice(stage, source);
+    }
+  } else if (options.statusText) {
+    $("stageSyncStatus").textContent = options.statusText;
+  }
+}
+
+async function syncStudyStageDetails(expectedStage, options = {}) {
+  if (state.stageSyncInFlight) return;
+  state.stageSyncInFlight = true;
+  try {
+    const current = await fetchJson("/study-stage");
+    if (expectedStage && current.studyStage !== expectedStage) return;
+    applyStudyStage(current, options);
+  } catch (error) {
+    $("stageSyncStatus").textContent = "阶段详情同步失败，将自动重试";
+  } finally {
+    state.stageSyncInFlight = false;
+  }
+}
+
+function handlePayloadStudyStage(payload) {
+  if (!payload.studyStage) return;
+  const stage = normalizeStudyStage(payload.studyStage);
+  if (!state.stageInitialized) {
+    applyStudyStage(
+      {
+        studyStage: stage,
+        stageLabel: payload.stageLabel,
+      },
+      { statusText: "已与本地节点同步" }
+    );
+    syncStudyStageDetails(stage).catch(() => {});
+    return;
+  }
+  if (stage === state.settings.studyStage) return;
+
+  applyStudyStage(
+    {
+      studyStage: stage,
+      stageLabel: payload.stageLabel,
+      stageSource: "system",
+    },
+    { statusText: "检测到阶段变化，正在同步来源" }
+  );
+  syncStudyStageDetails(stage, { announce: true }).catch(() => {});
+}
+
 function render(payload) {
   const safe = normalizePayload(payload || {});
+  handlePayloadStudyStage(safe);
   if (isCalibrating() && (!state.calibrationSourceId || safe.sourceId === state.calibrationSourceId)) {
     renderCalibrationState(safe);
     return;
@@ -598,9 +737,9 @@ function buildReviewAiContext() {
     current: state.payload,
     settings: {
       handlingMode: state.settings.handlingMode,
-      ageMode: state.settings.ageMode,
-      managedScoreThreshold: effectiveManagedScoreThreshold(),
-      managedReminderInterval: effectiveManagedIntervalMinutes(),
+      studyStage: state.settings.studyStage,
+      stageLabel: state.settings.stageLabel,
+      policy: Object.assign({}, state.settings.policy),
     },
   };
 }
@@ -1300,37 +1439,38 @@ async function fetchJson(path, options) {
 }
 
 function effectiveManagedScoreThreshold() {
-  const age = AGE_MODE_CONFIG[state.settings.ageMode] || AGE_MODE_CONFIG.middle;
-  return Math.max(40, Math.min(95, Number(state.settings.managedScoreThreshold || 65) + age.scoreOffset));
+  return policyNumber(state.settings.policy, "score_threshold", 65);
 }
 
-function effectiveManagedIntervalMinutes() {
-  const age = AGE_MODE_CONFIG[state.settings.ageMode] || AGE_MODE_CONFIG.middle;
-  return Math.max(1, Number(state.settings.managedReminderInterval || 5) + age.intervalOffset);
+function effectiveManagedCooldownMs() {
+  return policyNumber(state.settings.policy, "cooldown_seconds", 120) * 1000;
+}
+
+function isMaskedToken(value) {
+  return /\*{3,}/.test(String(value || "").trim());
 }
 
 function readSettingsForm() {
   return {
     xiaozhiMcpUrl: $("xiaozhiMcpUrl").value.trim(),
-    xiaozhiMcpToken: $("xiaozhiMcpToken").value.trim(),
     aiAnalysisMode: $("aiAnalysisMode").value,
     awayThresholdMinutes: Math.max(1, Math.min(120, Number($("awayThresholdMinutes").value || 15))),
     handlingMode: $("handlingMode").value,
-    managedReminderInterval: Math.max(1, Number($("managedReminderInterval").value || 5)),
-    managedScoreThreshold: Math.max(40, Math.min(90, Number($("managedScoreThreshold").value || 65))),
-    ageMode: $("ageMode").value,
   };
 }
 
 function writeSettingsForm() {
   $("xiaozhiMcpUrl").value = state.settings.xiaozhiMcpUrl || "";
-  $("xiaozhiMcpToken").value = state.settings.xiaozhiMcpToken || "";
+  if (!state.settings.tokenDirty) {
+    $("xiaozhiMcpToken").value = "";
+  }
+  $("xiaozhiMcpToken").placeholder = state.settings.xiaozhiMcpTokenConfigured
+    ? "已配置，留空则保持不变"
+    : "可选";
   $("aiAnalysisMode").value = state.settings.aiAnalysisMode || "manual";
   $("awayThresholdMinutes").value = state.settings.awayThresholdMinutes || 15;
   $("handlingMode").value = state.settings.handlingMode || "parent";
-  $("managedReminderInterval").value = state.settings.managedReminderInterval || 5;
-  $("managedScoreThreshold").value = state.settings.managedScoreThreshold || 65;
-  $("ageMode").value = state.settings.ageMode || "middle";
+  renderStudyStage();
 }
 
 function saveLocalSettings() {
@@ -1338,8 +1478,6 @@ function saveLocalSettings() {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
       aiAnalysisMode: state.settings.aiAnalysisMode,
       handlingMode: state.settings.handlingMode,
-      managedReminderInterval: state.settings.managedReminderInterval,
-      managedScoreThreshold: state.settings.managedScoreThreshold,
     }));
   } catch (error) {
     // Local persistence is best effort only.
@@ -1350,7 +1488,9 @@ function loadLocalSettings() {
   try {
     const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return;
-    state.settings = Object.assign({}, state.settings, JSON.parse(raw));
+    const local = JSON.parse(raw);
+    if (local.aiAnalysisMode) state.settings.aiAnalysisMode = local.aiAnalysisMode;
+    if (local.handlingMode) state.settings.handlingMode = local.handlingMode;
   } catch (error) {
     // Ignore malformed local settings.
   }
@@ -1376,12 +1516,17 @@ async function loadSettings() {
     const remote = await fetchJson("/settings");
     state.settings = Object.assign({}, state.settings, {
       xiaozhiMcpUrl: remote.xiaozhiMcpUrl || "",
-      xiaozhiMcpToken: remote.xiaozhiMcpToken || "",
+      xiaozhiMcpTokenConfigured:
+        Boolean(remote.xiaozhiMcpTokenConfigured) || isMaskedToken(remote.xiaozhiMcpToken),
+      tokenPreservationValue: isMaskedToken(remote.xiaozhiMcpToken)
+        ? remote.xiaozhiMcpToken
+        : "",
+      tokenDirty: false,
       awayThresholdMinutes: Number(remote.awayTimeoutMinutes || state.settings.awayThresholdMinutes),
-      ageMode: remote.ageMode || state.settings.ageMode,
     });
+    applyStudyStage(remote, { statusText: "已与后端设置同步" });
   } catch (error) {
-    // Keep local defaults while the backend is starting.
+    $("stageSyncStatus").textContent = "设置读取失败，等待本地节点";
   }
   writeSettingsForm();
   applyAiAnalysisSchedule();
@@ -1391,31 +1536,68 @@ async function saveSettings(event) {
   event.preventDefault();
   state.settings = Object.assign({}, state.settings, readSettingsForm());
   saveLocalSettings();
-  writeSettingsForm();
   applyAiAnalysisSchedule();
   const payload = {
     awayTimeoutMinutes: state.settings.awayThresholdMinutes,
     xiaozhiMcpUrl: state.settings.xiaozhiMcpUrl,
-    xiaozhiMcpToken: state.settings.xiaozhiMcpToken,
-    ageMode: state.settings.ageMode,
+    ageMode: state.settings.studyStage,
+    stageSource: ["parent", "voice", "system"].includes(state.settings.stageSource)
+      ? state.settings.stageSource
+      : "system",
   };
+  if (state.settings.tokenDirty) {
+    payload.xiaozhiMcpToken = $("xiaozhiMcpToken").value.trim();
+  } else if (state.settings.tokenPreservationValue) {
+    payload.xiaozhiMcpToken = state.settings.tokenPreservationValue;
+  }
   const saved = await fetchJson("/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   state.settings.awayThresholdMinutes = Number(saved.awayTimeoutMinutes || state.settings.awayThresholdMinutes);
+  state.settings.xiaozhiMcpTokenConfigured =
+    Boolean(saved.xiaozhiMcpTokenConfigured) || isMaskedToken(saved.xiaozhiMcpToken);
+  state.settings.tokenPreservationValue = isMaskedToken(saved.xiaozhiMcpToken)
+    ? saved.xiaozhiMcpToken
+    : "";
+  state.settings.tokenDirty = false;
+  applyStudyStage(saved, { statusText: "设置已保存并同步" });
   writeSettingsForm();
-  const age = AGE_MODE_CONFIG[state.settings.ageMode] || AGE_MODE_CONFIG.middle;
   $("controlResult").textContent =
-    `设置已保存：${age.label}模式，托管阈值 ${effectiveManagedScoreThreshold()} 分，提醒间隔 ${effectiveManagedIntervalMinutes()} 分钟。`;
+    `设置已保存：${state.settings.stageLabel}模式，提醒阈值 ${effectiveManagedScoreThreshold()} 分，冷却 ${policyNumber(state.settings.policy, "cooldown_seconds", 120)} 秒。`;
+}
+
+async function setStudyStage(stage) {
+  const previousStage = state.settings.studyStage;
+  const inputs = document.querySelectorAll('input[name="studyStage"]');
+  inputs.forEach((input) => {
+    input.disabled = true;
+  });
+  $("stageSyncStatus").textContent = "正在同步阶段设置";
+  try {
+    const saved = await fetchJson("/study-stage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, source: "parent" }),
+    });
+    applyStudyStage(saved, { announce: true });
+  } catch (error) {
+    state.settings.studyStage = previousStage;
+    renderStudyStage();
+    $("stageSyncStatus").textContent = "阶段切换失败，请稍后重试";
+  } finally {
+    inputs.forEach((input) => {
+      input.disabled = false;
+    });
+  }
 }
 
 function shouldManagedReminder(payload) {
   if (state.settings.handlingMode !== "managed") return false;
   if (!payload) return false;
   const now = Date.now();
-  const cooldownMs = effectiveManagedIntervalMinutes() * 60 * 1000;
+  const cooldownMs = effectiveManagedCooldownMs();
   if (now - state.lastManagedReminderAt < cooldownMs) return false;
   if (payload.status === "timeout_away") return true;
   return payload.focusScore < effectiveManagedScoreThreshold();
@@ -1437,9 +1619,8 @@ async function maybeRunManagedReminder(payload) {
   const advice = state.aiAdvice || await refreshAiAdvice({ force: false, switchToAdvice: false, silent: true });
   const script = (advice?.xiaozhiScript || advice?.message || fallbackManagedScript(payload)).trim();
   if (!script) return;
-  await sendControl("managed_ai_reminder", script, { silent: true });
-  $("controlResult").textContent =
-    `托管提醒已触发：${script}${state.settings.xiaozhiMcpUrl ? "" : "（小智 MCP 地址尚未接入，当前仅记录指令）"}`;
+  const result = await sendControl("managed_ai_reminder", script, { silent: true });
+  $("controlResult").textContent = `托管${reminderQueueMessage(result)}`;
 }
 
 function renderSourceList(items = []) {
@@ -1643,6 +1824,17 @@ async function addNetworkSource(event) {
   $("controlResult").textContent = "视频源已添加并切换。";
 }
 
+function reminderQueueMessage(data) {
+  if (!data?.reminder) return "指令已由本地节点接收。";
+  if (data.mcpStatus?.running) {
+    return "提醒已入队；MCP 正在运行，等待设备领取。";
+  }
+  if (data.mcpStatus) {
+    return "提醒已入队；MCP 未运行，暂不会播报。";
+  }
+  return "提醒已入队；MCP 状态暂不可用，尚不能确认播报。";
+}
+
 async function sendControl(command, text = "", options = {}) {
   const payload = { command, issuedAt: Date.now() };
   if (text) payload.text = text;
@@ -1651,14 +1843,17 @@ async function sendControl(command, text = "", options = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (data.reminder) {
+    data.mcpStatus = await fetchJson("/mcp/status").catch(() => null);
+  }
   if (!options.silent) {
-    if (data.message) {
+    if (data.reminder) {
+      $("controlResult").textContent = reminderQueueMessage(data);
+    } else if (data.message) {
       $("controlResult").textContent = data.message;
-      return data;
+    } else {
+      $("controlResult").textContent = `指令已接收：${data.command}`;
     }
-    $("controlResult").textContent = text
-      ? `家长留言已发送：${data.text}`
-      : `指令已发送：${data.command}`;
   }
   return data;
 }
@@ -1776,6 +1971,15 @@ function bindEvents() {
 
   $("sourceForm").addEventListener("submit", addNetworkSource);
   $("settingsForm").addEventListener("submit", saveSettings);
+  $("xiaozhiMcpToken").addEventListener("input", () => {
+    state.settings.tokenDirty = true;
+    $("xiaozhiMcpToken").placeholder = "保存后更新 Token";
+  });
+  document.querySelectorAll('input[name="studyStage"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) setStudyStage(input.value);
+    });
+  });
   $("refreshSourcesButton").addEventListener("click", refreshSources);
   $("sendMessageButton").addEventListener("click", () => {
     const text = $("parentMessage").value.trim();
@@ -1827,10 +2031,3 @@ function init() {
 }
 
 init();
-
-
-
-
-
-
-
