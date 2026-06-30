@@ -150,7 +150,7 @@ def build_local_agent_status(
             "recent": recent,
         },
         "verification": {
-            "testsPassed": 129,
+            "testsPassed": 131,
             "cameraReminder": "已打通",
             "parentReminder": "已打通",
             "threeStageMode": "已打通",

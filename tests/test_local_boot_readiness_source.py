@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SANDBOX = ROOT / "xiaozhi-server-sandbox"
 FIRMWARE = ROOT / "xiaozhi-esp32"
+MANUAL_LAUNCHER = ROOT / "一键启动小智伴学.cmd"
 
 
 def test_windows_autostart_launches_all_local_services() -> None:
@@ -17,6 +18,22 @@ def test_windows_autostart_launches_all_local_services() -> None:
         assert str(port) in start_all
     assert 'SpecialFolders("Startup")' in installer
     assert "START_ALL.ps1" in installer
+
+
+def test_windows_autostart_retries_services_that_exit_before_ports_open() -> None:
+    start_all = (SANDBOX / "START_ALL.ps1").read_text(encoding="utf-8")
+
+    assert "Start-ServiceProcess" in start_all
+    assert "-PassThru" in start_all
+    assert ".HasExited" in start_all
+    assert "startup-status.log" in start_all
+
+
+def test_manual_launcher_starts_services_and_opens_status_page() -> None:
+    launcher = MANUAL_LAUNCHER.read_text(encoding="utf-8")
+
+    assert "START_ALL.ps1" in launcher
+    assert "http://127.0.0.1:8000/local-agent" in launcher
 
 
 def test_cached_device_configuration_skips_blocking_ota_retries() -> None:

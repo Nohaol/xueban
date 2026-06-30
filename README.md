@@ -14,7 +14,7 @@
 - DeepSeek + 轻量知识库问答
 - MQTT 唤醒与 UDP/TTS 主动语音下行
 - 本地智能体运行中心与 IP 地址诊断
-- 129 项自动化测试
+- 131 项自动化测试
 
 ## 页面入口
 
@@ -66,7 +66,7 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 python -m pytest tests -q
 ```
 
-当前结果：`129 passed`。
+当前结果：`131 passed`。
 
 ## 安全说明
 
