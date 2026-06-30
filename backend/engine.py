@@ -99,6 +99,7 @@ class FocusEngine:
         state_store: RuntimeStateStore | None = None,
         reminder_store: ReminderStore | None = None,
         reminder_policy: ReminderPolicy | None = None,
+        active_speech=None,
     ) -> None:
         self.config = config or EngineConfig()
         runtime_dir = Path(
@@ -117,6 +118,7 @@ class FocusEngine:
         self.reminder_policy = reminder_policy or ReminderPolicy(
             state_path=runtime_dir / "reminder_policy.json"
         )
+        self.active_speech = active_speech
         persisted_state = self.state_store.read()
         self.config.away_timeout_seconds = (
             int(persisted_state["awayTimeoutMinutes"]) * 60
@@ -172,6 +174,9 @@ class FocusEngine:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
         self._release_capture()
+        close = getattr(self.active_speech, "close", None)
+        if callable(close):
+            close()
 
     def get_payload(self) -> dict:
         with self._lock:
@@ -211,7 +216,7 @@ class FocusEngine:
             return None
         if reminder is not None:
             try:
-                self.reminder_store.enqueue(
+                queued_reminder = self.reminder_store.enqueue(
                     "managed_ai_reminder",
                     reminder["text"],
                     focus_payload,
@@ -236,8 +241,30 @@ class FocusEngine:
                     mark_sent(reminder)
                 except Exception as error:
                     self._record_reminder_error("policy_commit", error)
+            self.dispatch_active_speech(queued_reminder)
             reminder.pop("_policyReservation", None)
         return reminder
+
+    def dispatch_active_speech(self, reminder: dict) -> bool:
+        dispatch = getattr(self.active_speech, "dispatch", None)
+        if not callable(dispatch):
+            return False
+        try:
+            return bool(dispatch(reminder))
+        except Exception as error:
+            self._record_reminder_error("active_speech_dispatch", error)
+            return False
+
+    def active_speech_status(self) -> dict:
+        status = getattr(self.active_speech, "status", None)
+        if not callable(status):
+            return {
+                "enabled": False,
+                "lastStatus": "disabled",
+                "lastError": None,
+                "lastReminderId": None,
+            }
+        return status()
 
     @property
     def last_reminder_error(self) -> str | None:

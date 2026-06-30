@@ -1,0 +1,23 @@
+server:
+  ip: 0.0.0.0
+  port: 18000
+  http_port: 18003
+  mqtt_gateway: null
+  mqtt_signature_key: null
+
+selected_module:
+  ASR: WindowsSpeech
+  TTS: WindowsSapiTTS
+
+ASR:
+  WindowsSpeech:
+    type: windows_speech
+    output_dir: tmp/
+
+TTS:
+  WindowsSapiTTS:
+    type: windows_sapi
+    voice: Microsoft Huihui Desktop
+    rate: 0
+    volume: 100
+    output_dir: tmp/

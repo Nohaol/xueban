@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小智伴学 · 本地智能体运行中心</title>
+  <link rel="stylesheet" href="/static/local-agent.css">
+</head>
+<body>
+  <aside class="rail">
+    <div class="brand"><span class="brand-mark">智</span><strong>ZHIBAN</strong></div>
+    <nav>
+      <a href="/v2"><span>⌂</span>家长端</a>
+      <a class="active" href="/local-agent"><span>◉</span>本地智能体</a>
+      <a href="/v2"><span>▦</span>学习复盘</a>
+    </nav>
+    <div class="rail-foot">
+      <span class="live-dot"></span>
+      <div><strong>本地节点</strong><small>隐私数据不出局域网</small></div>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">LOCAL AGENT CONSOLE</p>
+        <h1>本地智能体运行中心</h1>
+        <p>把“看见分心”转化为机器人真正开口的完整链路。</p>
+      </div>
+      <div class="header-actions">
+        <a class="ghost-button" href="/v2">打开家长端</a>
+        <button id="refresh" class="icon-button" title="刷新状态">↻</button>
+      </div>
+    </header>
+
+    <section class="hero-band">
+      <div class="device-orbit">
+        <div class="orbit-ring"></div>
+        <div class="robot-face"><i></i><i></i></div>
+      </div>
+      <div class="hero-copy">
+        <div class="status-line"><span id="device-dot" class="status-dot"></span><span id="device-status">正在读取设备状态</span></div>
+        <h2 id="device-name">小智桌面学伴机器人</h2>
+        <p id="device-id">设备信息加载中</p>
+      </div>
+      <div class="stage-block">
+        <small>当前学习模式</small>
+        <strong id="stage-label">--</strong>
+        <span id="stage-source">等待同步</span>
+      </div>
+      <div class="score-block">
+        <small>端到端能力</small>
+        <strong>4 / 4</strong>
+        <span>主动播报 · 三学段 · 对话 · 知识问答</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel span-8">
+        <div class="panel-title"><div><p class="eyebrow">END-TO-END PIPELINE</p><h3>主动提醒技术链路</h3></div><span class="tag success">已打通</span></div>
+        <div class="pipeline">
+          <div class="node orange"><b>01</b><strong>摄像头</strong><span>MediaPipe 视觉采样</span></div>
+          <div class="connector"></div>
+          <div class="node blue"><b>02</b><strong>专注分析</strong><span>阈值与学段策略</span></div>
+          <div class="connector"></div>
+          <div class="node green"><b>03</b><strong>本地服务</strong><span>提醒编排与 TTS</span></div>
+          <div class="connector"></div>
+          <div class="node yellow"><b>04</b><strong>小智播报</strong><span>MQTT + UDP 下行</span></div>
+        </div>
+      </article>
+
+      <article class="panel span-4 network-panel">
+        <div class="panel-title"><div><p class="eyebrow">NETWORK</p><h3>局域网可用性</h3></div><span id="network-tag" class="tag">检测中</span></div>
+        <dl>
+          <div><dt>电脑当前 IP</dt><dd id="current-ip">--</dd></div>
+          <div><dt>固件目标 IP</dt><dd id="target-ip">--</dd></div>
+          <div><dt>USB 连接</dt><dd>运行时不需要</dd></div>
+        </dl>
+        <p id="network-tip" class="notice">正在检查固件和电脑是否位于同一地址。</p>
+      </article>
+
+      <article class="panel span-5">
+        <div class="panel-title"><div><p class="eyebrow">SERVICES</p><h3>本地服务矩阵</h3></div><span class="tag">5 个节点</span></div>
+        <div id="service-list" class="service-list"></div>
+      </article>
+
+      <article class="panel span-3">
+        <div class="panel-title"><div><p class="eyebrow">CAPABILITIES</p><h3>智能体能力栈</h3></div></div>
+        <div id="capability-list" class="capability-list"></div>
+      </article>
+
+      <article class="panel span-4">
+        <div class="panel-title"><div><p class="eyebrow">REMINDERS</p><h3>最近播报记录</h3></div><span id="reminder-count" class="tag success">0 条完成</span></div>
+        <div id="reminder-list" class="reminder-list"><p class="empty">暂无提醒记录</p></div>
+      </article>
+
+      <article class="panel span-12 verification">
+        <div><p class="eyebrow">VERIFICATION</p><h3>两日联调成果</h3></div>
+        <div class="verify-item"><strong>129</strong><span>自动化测试通过</span></div>
+        <div class="verify-item"><strong>3</strong><span>小学 / 初中 / 高中</span></div>
+        <div class="verify-item"><strong>2</strong><span>家长 + 视觉双通路</span></div>
+        <div class="verify-item"><strong>0</strong><span>运行时 USB 依赖</span></div>
+      </article>
+    </section>
+    <footer>小智伴学本地部署 · 状态每 5 秒自动刷新 <span id="updated-at">--</span></footer>
+  </main>
+  <script src="/static/local-agent.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#14233B" flood-opacity=".11"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#14233B"/></marker>
+    <style>text{font-family:'Microsoft YaHei','Noto Sans SC',Arial,sans-serif;letter-spacing:0}.title{font-size:42px;font-weight:800;fill:#14233B}.sub{font-size:18px;fill:#76808D}.h{font-size:24px;font-weight:800;fill:#1C2635}.b{font-size:17px;fill:#1C2635}.s{font-size:14px;fill:#76808D}.num{font-size:34px;font-weight:900}.white{fill:#fff}.bold{font-weight:800}</style>
+  </defs>
+<text x="70" y="72" class="s" fill="#EF6634" font-weight="800">CHINESE ASR RECOVERY</text>
+  <text x="70" y="125" class="title">中文语音识别修复：从乱码到自然对话</text>
+  <text x="70" y="160" class="sub">替换不稳定识别链路，统一 UTF-8 文本传递，并用真实语音完成端到端验证</text>
+  <path d="M70 190H1530" stroke="#DED8CE" stroke-width="2"/>
+<rect x="70" y="245" width="610" height="480" rx="8" fill="#FFFDF9" stroke="#DED8CE" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="70" y="245" width="8" height="480" rx="4" fill="#EF6634"/><text x="115" y="305" class="s" fill="#EF6634" font-weight="800">BEFORE · 修复前</text><text x="115" y="360" class="h">识别结果不可用</text>
+<rect x="115" y="405" width="520" height="92" rx="8" fill="#FFF0E8"/><text x="145" y="447" class="b" fill="#8A4228">输入：“你好 / 高中模式”</text><text x="145" y="480" class="b bold" fill="#EF6634">输出：乱码、误识别、无法切换</text>
+<path d="M115 545H635" stroke="#DED8CE" stroke-width="2"/><text x="115" y="590" class="b">FunASR/SenseVoice 环境不稳定</text><text x="115" y="628" class="b">字符编码链路不一致</text><text x="115" y="666" class="b">开机选择与按键对话均受影响</text>
+<rect x="920" y="245" width="610" height="480" rx="8" fill="#FFFDF9" stroke="#DED8CE" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="920" y="245" width="8" height="480" rx="4" fill="#2F8B68"/><text x="965" y="305" class="s" fill="#2F8B68" font-weight="800">AFTER · 修复后</text><text x="965" y="360" class="h">WindowsSpeech 稳定中文识别</text>
+<rect x="965" y="405" width="520" height="92" rx="8" fill="#EAF5EF"/><text x="995" y="447" class="b" fill="#245F49">输入：“高中 / 你好 / 一加一等于几”</text><text x="995" y="480" class="b bold" fill="#2F8B68">输出：正确切换、正常问候、回答等于 2</text>
+<path d="M965 545H1485" stroke="#DED8CE" stroke-width="2"/><text x="965" y="590" class="b">Windows 原生中文语音服务</text><text x="965" y="628" class="b">UTF-8 全链路传输</text><text x="965" y="666" class="b">开机选择与按键对话双场景验证</text>
+<g transform="translate(800 485)"><circle r="72" fill="#14233B"/><path d="M-26 0H26M8-18L26 0L8 18" stroke="#EAB83F" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<rect x="545" y="765" width="510" height="38" rx="19" fill="#3277C7" opacity=".13"/><text x="800" y="790" text-anchor="middle" class="s" fill="#3277C7" font-weight="800">真实设备验证：语音选择 + 中文自由对话</text>
+</svg>

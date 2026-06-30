@@ -1,0 +1,59 @@
+server:
+  ip: 0.0.0.0
+  port: 18000
+  http_port: 18003
+  websocket: ws://__LOCAL_IP__:18000/xiaozhi/v1/
+  vision_explain: http://__LOCAL_IP__:18003/mcp/vision/explain
+  timezone_offset: +8
+  auth:
+    enabled: false
+  mqtt_gateway: __LOCAL_IP__:1883
+  mqtt_signature_key: __MQTT_SIGNATURE_KEY__
+  udp_gateway: __LOCAL_IP__:8884
+
+log:
+  log_level: INFO
+  log_dir: tmp
+  log_file: server.log
+
+prompt: |
+  你是桌面学习陪伴机器人小智。表达温和、简短、尊重孩子，不训斥、不贴标签。
+  优先帮助孩子把注意力放回当前小目标，提醒后不要连续追问。
+  回答学习问题时根据孩子选择的小学、初中或高中模式调整深度。
+  下面是本地轻量伴学知识资料。资料没有覆盖的问题可以使用可靠的通用知识回答，但不要虚构资料来源。
+__LOCAL_KNOWLEDGE__
+
+selected_module:
+  VAD: SileroVAD
+  ASR: WindowsSpeech
+  LLM: DeepSeekLLM
+  VLLM: ChatGLMVLLM
+  TTS: WindowsSapiTTS
+  Memory: nomem
+  Intent: nointent
+
+ASR:
+  WindowsSpeech:
+    type: windows_speech
+    output_dir: tmp/
+
+LLM:
+  DeepSeekLLM:
+    type: openai
+    model_name: __DEEPSEEK_MODEL__
+    url: __DEEPSEEK_BASE_URL__
+    api_key: __DEEPSEEK_API_KEY__
+    temperature: 0.4
+    max_tokens: 300
+
+TTS:
+  WindowsSapiTTS:
+    type: windows_sapi
+    voice: Microsoft Huihui Desktop
+    rate: 0
+    volume: 100
+    output_dir: tmp/
+  EdgeTTS:
+    type: edge
+    voice: zh-CN-XiaoxiaoNeural
+    output_dir: tmp/

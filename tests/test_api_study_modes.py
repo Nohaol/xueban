@@ -102,6 +102,51 @@ def test_study_stage_endpoints_share_runtime_state(tmp_path, monkeypatch):
     assert current.json()["stageSource"] == "voice"
 
 
+def test_parent_stage_change_announces_only_when_value_changes(
+    tmp_path,
+    monkeypatch,
+):
+    client, _, reminder_store = make_client(tmp_path, monkeypatch)
+
+    class Dispatcher:
+        def __init__(self):
+            self.items = []
+
+        def dispatch(self, item):
+            self.items.append(item)
+            return True
+
+    dispatcher = Dispatcher()
+    main.engine.active_speech = dispatcher
+
+    unchanged_middle = client.post(
+        "/study-stage",
+        json={"stage": "middle", "source": "parent"},
+    )
+    changed_high = client.post(
+        "/study-stage",
+        json={"stage": "high", "source": "parent"},
+    )
+    unchanged_high = client.post(
+        "/study-stage",
+        json={"stage": "high", "source": "parent"},
+    )
+    voice_change = client.post(
+        "/study-stage",
+        json={"stage": "primary", "source": "voice"},
+    )
+
+    items = reminder_store.snapshot()["items"]
+    assert unchanged_middle.json()["stageAnnouncementQueued"] is False
+    assert changed_high.json()["stageAnnouncementQueued"] is True
+    assert unchanged_high.json()["stageAnnouncementQueued"] is False
+    assert voice_change.json()["stageAnnouncementQueued"] is False
+    assert len(items) == 1
+    assert items[0]["command"] == "stage_change"
+    assert items[0]["text"] == "已切换到高中模式"
+    assert dispatcher.items == items
+
+
 def test_mcp_config_rejects_noncanonical_endpoint_and_redacts_status(
     tmp_path,
     monkeypatch,
@@ -150,6 +195,33 @@ def test_control_enqueues_only_reminder_commands(tmp_path, monkeypatch):
         "parent_message",
         "ai_script_message",
     ]
+
+
+def test_control_dispatches_parent_message_to_active_speech(
+    tmp_path,
+    monkeypatch,
+):
+    client, _, _ = make_client(tmp_path, monkeypatch)
+
+    class Dispatcher:
+        def __init__(self):
+            self.items = []
+
+        def dispatch(self, item):
+            self.items.append(item)
+            return True
+
+    dispatcher = Dispatcher()
+    main.engine.active_speech = dispatcher
+
+    response = client.post(
+        "/control",
+        json={"command": "parent_message", "text": "再坚持十分钟。"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["activeSpeechQueued"] is True
+    assert dispatcher.items[0]["text"] == "再坚持十分钟。"
 
 
 def test_existing_health_state_sources_and_snapshot_still_work(

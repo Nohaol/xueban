@@ -11,8 +11,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .deepseek_client import DeepSeekAdvisor
+from .active_speech import ActiveSpeechClient, ActiveSpeechDispatcher
 from .engine import EngineConfig, FocusEngine
 from .runtime_state import RuntimeStateStore, mask_secret
+from .local_agent_status import collect_local_agent_status
 from .schemas import (
     AIReviewRequest,
     ControlCommand,
@@ -41,10 +43,15 @@ reminder_store = ReminderStore(
     RUNTIME_DIR / "xiaozhi_reminders.json",
     state_store=state_store,
 )
+active_speech = ActiveSpeechDispatcher(
+    ActiveSpeechClient.from_env(),
+    reminder_store,
+)
 engine = FocusEngine(
     EngineConfig(),
     state_store=state_store,
     reminder_store=reminder_store,
+    active_speech=active_speech,
 )
 mcp_runtime = XiaozhiMcpRuntime(
     state_store=state_store,
@@ -86,6 +93,21 @@ def parent_console_v2() -> FileResponse:
     return FileResponse(STATIC_DIR / "parent-console-v2.html")
 
 
+@app.get("/local-agent")
+def local_agent_console() -> FileResponse:
+    return FileResponse(STATIC_DIR / "local-agent.html")
+
+
+@app.get("/local-agent/status")
+def local_agent_status() -> dict:
+    return collect_local_agent_status(
+        state=state_store.read(),
+        reminders=reminder_store.snapshot(),
+        active_speech=engine.active_speech_status(),
+        workspace_dir=BASE_DIR.parent,
+    )
+
+
 @app.get("/health")
 def health() -> dict:
     payload = engine.get_payload()
@@ -93,6 +115,7 @@ def health() -> dict:
         "ok": True,
         "status": payload["status"],
         "studentLabel": payload["studentLabel"],
+        "activeSpeech": engine.active_speech_status(),
     }
 
 
@@ -141,7 +164,27 @@ def get_study_stage() -> dict:
 
 @app.post("/study-stage")
 def set_study_stage(payload: StudyStageCommand) -> dict:
-    return _stage_response(state_store.set_stage(payload.stage, payload.source))
+    previous = state_store.read()
+    updated = state_store.set_stage(payload.stage, payload.source)
+    response = _stage_response(updated)
+    response["stageAnnouncementQueued"] = False
+    response["stageAnnouncementId"] = None
+
+    if (
+        payload.source == "parent"
+        and previous["studyStage"] != updated["studyStage"]
+    ):
+        reminder = reminder_store.enqueue(
+            "stage_change",
+            f"已切换到{updated['stageLabel']}模式",
+            engine.get_payload(),
+        )
+        response["stageAnnouncementQueued"] = engine.dispatch_active_speech(
+            reminder
+        )
+        response["stageAnnouncementId"] = reminder["id"]
+
+    return response
 
 
 @app.get("/mcp/status")
@@ -261,6 +304,9 @@ def control(command: ControlCommand) -> JSONResponse:
             command.command,
             command.text,
             engine.get_payload(),
+        )
+        result["activeSpeechQueued"] = engine.dispatch_active_speech(
+            result["reminder"]
         )
     return JSONResponse(result)
 

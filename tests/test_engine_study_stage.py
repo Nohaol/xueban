@@ -14,7 +14,7 @@ class Clock:
         return self.now
 
 
-def make_engine(tmp_path, clock=None):
+def make_engine(tmp_path, clock=None, active_speech=None):
     state = RuntimeStateStore(tmp_path / "state.json")
     reminders = ReminderStore(
         tmp_path / "reminders.json",
@@ -27,6 +27,7 @@ def make_engine(tmp_path, clock=None):
         state_store=state,
         reminder_store=reminders,
         reminder_policy=policy,
+        active_speech=active_speech,
     )
     return engine, state, reminders
 
@@ -60,6 +61,38 @@ def test_engine_runs_automatic_reminder_after_analysis(tmp_path):
     snapshot = reminders.snapshot()
     assert snapshot["pendingCount"] == 1
     assert snapshot["items"][0]["command"] == "managed_ai_reminder"
+
+
+def test_engine_dispatches_automatic_reminder_to_active_speech(tmp_path):
+    clock = Clock()
+
+    class Dispatcher:
+        def __init__(self):
+            self.items = []
+
+        def dispatch(self, item):
+            self.items.append(item)
+            return True
+
+    dispatcher = Dispatcher()
+    engine, _, _ = make_engine(
+        tmp_path,
+        clock=clock,
+        active_speech=dispatcher,
+    )
+    payload = {
+        "status": "distracted",
+        "focusScore": 40,
+        "awaySeconds": 0,
+        "metrics": {},
+    }
+
+    engine.process_automatic_reminder(payload)
+    clock.now = 115.0
+    engine.process_automatic_reminder(payload)
+
+    assert len(dispatcher.items) == 1
+    assert dispatcher.items[0]["command"] == "managed_ai_reminder"
 
 
 def test_engine_settings_update_away_timeout_and_legacy_age_mode(tmp_path):

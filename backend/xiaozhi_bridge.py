@@ -163,6 +163,52 @@ class ReminderStore:
             "item": result,
         }
 
+    def complete_direct(
+        self,
+        reminder_id: str,
+        *,
+        delivery: str,
+        spoken: bool = True,
+    ) -> dict:
+        with self.lock:
+            queue = self._read_unlocked()
+            item = next(
+                (
+                    candidate
+                    for candidate in queue["items"]
+                    if candidate.get("id") == reminder_id
+                ),
+                None,
+            )
+            if item is None:
+                return {
+                    "success": False,
+                    "acknowledged": False,
+                    "error": "reminder_not_found",
+                }
+            if item.get("status") in {"spoken", "skipped", "dismissed"}:
+                return {
+                    "success": True,
+                    "acknowledged": True,
+                    "idempotent": True,
+                    "item": deepcopy(item),
+                }
+            now_ms = int(self.clock() * 1000)
+            item["status"] = "spoken" if spoken else "skipped"
+            item["spoken"] = bool(spoken)
+            item["delivery"] = str(delivery)
+            item["deliveredAt"] = item.get("deliveredAt") or now_ms
+            item["leaseExpiresAt"] = None
+            item["acknowledgedAt"] = now_ms
+            self._write_unlocked(queue)
+            result = deepcopy(item)
+        return {
+            "success": True,
+            "acknowledged": True,
+            "idempotent": False,
+            "item": result,
+        }
+
     def snapshot(self) -> dict:
         with self.lock:
             queue = self._read_unlocked()
