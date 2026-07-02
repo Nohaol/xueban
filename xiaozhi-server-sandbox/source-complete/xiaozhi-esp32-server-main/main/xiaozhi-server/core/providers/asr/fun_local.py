@@ -40,13 +40,13 @@ class CaptureOutput:
 class ASRProvider(ASRProviderBase):
     def __init__(self, config: dict, delete_audio_file: bool):
         super().__init__()
-
+        
         # 内存检测，要求大于2G
         min_mem_bytes = 2 * 1024 * 1024 * 1024
         total_mem = psutil.virtual_memory().total
         if total_mem < min_mem_bytes:
             logger.bind(tag=TAG).error(f"可用内存不足2G，当前仅有 {total_mem / (1024*1024):.2f} MB，可能无法启动FunASR")
-
+        
         self.interface_type = InterfaceType.LOCAL
         self.model_dir = config.get("model_dir")
         self.output_dir = config.get("output_dir")  # 修正配置键名
@@ -74,7 +74,7 @@ class ASRProvider(ASRProviderBase):
     ) -> Tuple[Optional[str], Optional[str]]:
         """语音转文本主处理逻辑"""
         retry_count = 0
-
+        
         while retry_count < MAX_RETRIES:
             try:
                 if artifacts is None or not artifacts.temp_path:
